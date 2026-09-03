@@ -1,11 +1,17 @@
-import { eq } from "drizzle-orm";
+import { createHash } from "node:crypto";
+import { and, desc, eq, like, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
-import { ENV } from './_core/env';
+import {
+  InsertUser,
+  users,
+  vaultFiles,
+  vaultProjects,
+  vaultRevisions,
+} from "../drizzle/schema";
+import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
-// Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
@@ -19,74 +25,182 @@ export async function getDb() {
 }
 
 export async function upsertUser(user: InsertUser): Promise<void> {
-  if (!user.openId) {
-    throw new Error("User openId is required for upsert");
-  }
-
+  if (!user.openId) throw new Error("User openId is required for upsert");
   const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
-    return;
+  if (!db) return;
+
+  const values: InsertUser = { openId: user.openId };
+  const updateSet: Record<string, unknown> = {};
+  const textFields = ["name", "email", "loginMethod"] as const;
+  for (const field of textFields) {
+    if (user[field] !== undefined) {
+      values[field] = user[field] ?? null;
+      updateSet[field] = user[field] ?? null;
+    }
   }
-
-  try {
-    const values: InsertUser = {
-      openId: user.openId,
-    };
-    const updateSet: Record<string, unknown> = {};
-
-    const textFields = ["name", "email", "loginMethod"] as const;
-    type TextField = (typeof textFields)[number];
-
-    const assignNullable = (field: TextField) => {
-      const value = user[field];
-      if (value === undefined) return;
-      const normalized = value ?? null;
-      values[field] = normalized;
-      updateSet[field] = normalized;
-    };
-
-    textFields.forEach(assignNullable);
-
-    if (user.lastSignedIn !== undefined) {
-      values.lastSignedIn = user.lastSignedIn;
-      updateSet.lastSignedIn = user.lastSignedIn;
-    }
-    if (user.role !== undefined) {
-      values.role = user.role;
-      updateSet.role = user.role;
-    } else if (user.openId === ENV.ownerOpenId) {
-      values.role = 'admin';
-      updateSet.role = 'admin';
-    }
-
-    if (!values.lastSignedIn) {
-      values.lastSignedIn = new Date();
-    }
-
-    if (Object.keys(updateSet).length === 0) {
-      updateSet.lastSignedIn = new Date();
-    }
-
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
-      set: updateSet,
-    });
-  } catch (error) {
-    console.error("[Database] Failed to upsert user:", error);
-    throw error;
+  if (user.lastSignedIn !== undefined) {
+    values.lastSignedIn = user.lastSignedIn;
+    updateSet.lastSignedIn = user.lastSignedIn;
   }
+  if (user.role !== undefined || user.openId === ENV.ownerOpenId) {
+    values.role = user.role ?? "admin";
+    updateSet.role = values.role;
+  }
+  values.lastSignedIn ??= new Date();
+  if (!Object.keys(updateSet).length) updateSet.lastSignedIn = new Date();
+
+  await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
 }
 
 export async function getUserByOpenId(openId: string) {
   const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
-    return undefined;
-  }
-
+  if (!db) return undefined;
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
-
-  return result.length > 0 ? result[0] : undefined;
+  return result[0];
 }
 
-// TODO: add feature queries here as your schema grows.
+function fileChecksum(content: string) {
+  return createHash("sha256").update(content, "utf8").digest("hex");
+}
+
+export function checksumForFile(content: string) {
+  return fileChecksum(content);
+}
+
+export async function listVaultProjects(ownerId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(vaultProjects).where(eq(vaultProjects.ownerId, ownerId)).orderBy(desc(vaultProjects.updatedAt));
+}
+
+export async function getVaultProject(ownerId: number, projectId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select()
+    .from(vaultProjects)
+    .where(and(eq(vaultProjects.id, projectId), eq(vaultProjects.ownerId, ownerId)))
+    .limit(1);
+  return result[0];
+}
+
+export async function createVaultProject(ownerId: number, input: { name: string; description?: string; category?: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const baseSlug = input.name.toLowerCase().trim().replace(/[^a-z0-9ก-๙]+/gi, "-").replace(/^-|-$/g, "") || "project";
+  const slug = `${baseSlug}-${Date.now().toString(36)}`;
+  const result = await db.insert(vaultProjects).values({
+    ownerId,
+    name: input.name.trim(),
+    slug,
+    description: input.description?.trim() || null,
+    category: input.category?.trim() || "project",
+  });
+  return getVaultProject(ownerId, Number(result[0].insertId));
+}
+
+export async function listVaultFiles(ownerId: number, projectId: number, search?: string) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [eq(vaultFiles.ownerId, ownerId), eq(vaultFiles.projectId, projectId)];
+  const query = search?.trim();
+  if (query) {
+    const pattern = `%${query}%`;
+    conditions.push(or(like(vaultFiles.title, pattern), like(vaultFiles.path, pattern), like(vaultFiles.language, pattern))!);
+  }
+  return db.select().from(vaultFiles).where(and(...conditions)).orderBy(desc(vaultFiles.isFavorite), desc(vaultFiles.updatedAt));
+}
+
+export async function getVaultFile(ownerId: number, fileId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select()
+    .from(vaultFiles)
+    .where(and(eq(vaultFiles.id, fileId), eq(vaultFiles.ownerId, ownerId)))
+    .limit(1);
+  return result[0];
+}
+
+export async function createVaultFile(ownerId: number, input: {
+  projectId: number;
+  path: string;
+  title: string;
+  language: string;
+  kind: "code" | "sql" | "workflow" | "document" | "config" | "other";
+  content: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const content = input.content ?? "";
+  const result = await db.insert(vaultFiles).values({
+    ownerId,
+    projectId: input.projectId,
+    path: input.path.trim(),
+    title: input.title.trim(),
+    language: input.language.trim() || "text",
+    kind: input.kind,
+    content,
+    checksum: fileChecksum(content),
+    sizeBytes: Buffer.byteLength(content, "utf8"),
+  });
+  await db.update(vaultProjects).set({ updatedAt: new Date() }).where(and(eq(vaultProjects.id, input.projectId), eq(vaultProjects.ownerId, ownerId)));
+  return getVaultFile(ownerId, Number(result[0].insertId));
+}
+
+export async function updateVaultFile(ownerId: number, fileId: number, input: {
+  projectId: number;
+  path: string;
+  title: string;
+  language: string;
+  kind: "code" | "sql" | "workflow" | "document" | "config" | "other";
+  content: string;
+  isFavorite?: boolean;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  const current = await getVaultFile(ownerId, fileId);
+  if (!current || current.projectId !== input.projectId) return undefined;
+  const content = input.content ?? "";
+
+  await db.transaction(async tx => {
+    if (current.content !== content) {
+      await tx.insert(vaultRevisions).values({
+        fileId,
+        projectId: current.projectId,
+        ownerId,
+        content: current.content,
+        checksum: current.checksum,
+        sizeBytes: current.sizeBytes,
+      });
+    }
+    await tx.update(vaultFiles).set({
+      path: input.path.trim(),
+      title: input.title.trim(),
+      language: input.language.trim() || "text",
+      kind: input.kind,
+      content,
+      checksum: fileChecksum(content),
+      sizeBytes: Buffer.byteLength(content, "utf8"),
+      isFavorite: input.isFavorite ?? current.isFavorite,
+      updatedAt: new Date(),
+    }).where(eq(vaultFiles.id, fileId));
+    await tx.update(vaultProjects).set({ updatedAt: new Date() }).where(and(eq(vaultProjects.id, current.projectId), eq(vaultProjects.ownerId, ownerId)));
+  });
+  return getVaultFile(ownerId, fileId);
+}
+
+export async function getVaultStats(ownerId: number) {
+  const db = await getDb();
+  if (!db) return { projects: 0, files: 0, revisions: 0 };
+  const [projectRows, fileRows, revisionRows] = await Promise.all([
+    db.select({ count: sql<number>`count(*)` }).from(vaultProjects).where(eq(vaultProjects.ownerId, ownerId)),
+    db.select({ count: sql<number>`count(*)` }).from(vaultFiles).where(eq(vaultFiles.ownerId, ownerId)),
+    db.select({ count: sql<number>`count(*)` }).from(vaultRevisions).where(eq(vaultRevisions.ownerId, ownerId)),
+  ]);
+  return {
+    projects: Number(projectRows[0]?.count ?? 0),
+    files: Number(fileRows[0]?.count ?? 0),
+    revisions: Number(revisionRows[0]?.count ?? 0),
+  };
+}
