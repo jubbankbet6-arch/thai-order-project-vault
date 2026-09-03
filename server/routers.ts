@@ -15,6 +15,7 @@ import {
   updateVaultFile,
 } from "./db";
 import { fetchLiveOrder, fetchLiveOrders, fetchLiveThreads, getLiveOrderStats } from "./supabase";
+import { generateOrderSummary } from "./order-summary";
 
 const projectInput = z.object({
   name: z.string().trim().min(1).max(180),
@@ -77,6 +78,7 @@ export const appRouter = router({
     }),
   }),
   orders: router({
+    generateSummary: protectedProcedure.input(z.object({ rawText: z.string().max(20_000), customerName: z.string().max(180).optional(), product: z.string().max(500).optional(), cod: z.string().max(40).optional() })).mutation(({ input }) => generateOrderSummary(input)),
     live: protectedProcedure.input(z.object({ search: z.string().optional() }).optional()).query(async ({ input }) => {
       const orders = await fetchLiveOrders(input?.search);
       return { orders, stats: getLiveOrderStats(orders), source: ["bb_order", "bb_order_items_fix"] as const, fetchedAt: new Date().toISOString() };

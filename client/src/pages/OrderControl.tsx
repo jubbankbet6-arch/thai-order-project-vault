@@ -26,6 +26,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 
 const baht = new Intl.NumberFormat("th-TH");
+type GeneratedSummary = { orderNumber: string; customerName: string; phone: string; address: string; product: string; cod: string; copyText: string };
 
 function money(value: number | null | undefined) {
   return value === null || value === undefined ? "—" : `${baht.format(value)} ฿`;
@@ -56,9 +57,15 @@ export default function OrderControl() {
   const [filter, setFilter] = useState<"all" | "mapped" | "review" | "cod">("all");
   const [selectedNumber, setSelectedNumber] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [draftText, setDraftText] = useState("");
+  const [draftCustomer, setDraftCustomer] = useState("");
+  const [draftProduct, setDraftProduct] = useState("");
+  const [draftCod, setDraftCod] = useState("");
+  const [generatedSummary, setGeneratedSummary] = useState<GeneratedSummary | null>(null);
   const liveQuery = trpc.orders.live.useQuery({ search: search || undefined }, { refetchInterval: 30_000 });
   const orders = liveQuery.data?.orders ?? [];
   const stats = liveQuery.data?.stats;
+  const summaryMutation = trpc.orders.generateSummary.useMutation({ onSuccess: setGeneratedSummary });
 
   useEffect(() => {
     if (!selectedNumber && orders[0]) setSelectedNumber(orders[0].order_number);
@@ -83,6 +90,13 @@ export default function OrderControl() {
     window.setTimeout(() => setCopied(false), 1800);
   };
 
+  const copyGenerated = async () => {
+    if (!generatedSummary) return;
+    await navigator.clipboard?.writeText(generatedSummary.copyText);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1800);
+  };
+
   return <div className="min-h-[calc(100vh-2rem)] bg-[#09090b] text-white">
     <div className="mx-auto max-w-[1680px] space-y-5 p-3 sm:p-5 lg:p-7">
       <header className="relative overflow-hidden rounded-3xl border border-white/10 bg-[#111116] px-6 py-6 shadow-2xl shadow-black/30 sm:px-8">
@@ -93,6 +107,8 @@ export default function OrderControl() {
           <div className="flex flex-wrap items-center gap-2"><Badge className="border border-emerald-500/30 bg-emerald-500/10 text-emerald-300"><span className="mr-2 h-1.5 w-1.5 rounded-full bg-emerald-400" /> LIVE DATA</Badge><Badge variant="outline" className="border-fuchsia-500/30 bg-violet-500/5 text-fuchsia-300"><Database className="mr-1.5 h-3 w-3" /> Supabase</Badge><Button variant="outline" size="sm" onClick={() => liveQuery.refetch()} className="border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 hover:text-white"><RefreshCw className={`mr-2 h-3.5 w-3.5 ${liveQuery.isFetching ? "animate-spin" : ""}`} /> รีเฟรช</Button></div>
         </div>
       </header>
+
+      <Card className="overflow-hidden rounded-3xl border-fuchsia-500/20 bg-[#111116] shadow-2xl shadow-fuchsia-950/10"><CardContent className="p-5 sm:p-6"><div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between"><div><div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.25em] text-fuchsia-300"><Sparkles className="h-3.5 w-3.5" /> ADMIN ORDER SUMMARY</div><h2 className="mt-2 text-xl font-semibold text-white">วางที่อยู่ แล้วสร้างใบสรุปออเดอร์</h2><p className="mt-1 text-xs leading-5 text-slate-500">ระบบจะอ่านชื่อ เบอร์โทร ที่อยู่ สินค้า และ COD จากข้อความ แล้วสร้างเลข <span className="font-mono text-fuchsia-300">ORD</span> ให้อัตโนมัติ โดยยังไม่เขียนลงฐานข้อมูลจริง</p></div><Badge variant="outline" className="w-fit border-fuchsia-500/30 bg-fuchsia-500/5 text-fuchsia-200">DRAFT MODE</Badge></div><div className="mt-5 grid gap-3 lg:grid-cols-[1.4fr_0.6fr]"><textarea value={draftText} onChange={event => setDraftText(event.target.value)} placeholder={'ก๊อปข้อความลูกค้าหรือที่อยู่มาวางที่นี่…\nเช่น ชื่อ: สมชาย ใจดี\nโทร: 0812345678\nบ้านเลขที่…'} className="min-h-32 w-full resize-y rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm leading-6 text-slate-100 outline-none placeholder:text-slate-600 focus:border-fuchsia-400/50 focus:ring-2 focus:ring-fuchsia-500/20" /><div className="grid content-start gap-3 sm:grid-cols-3 lg:grid-cols-1"><Input value={draftCustomer} onChange={event => setDraftCustomer(event.target.value)} placeholder="ชื่อลูกค้า (ถ้ามี)" className="border-white/10 bg-black/30 text-white placeholder:text-slate-600" /><Input value={draftProduct} onChange={event => setDraftProduct(event.target.value)} placeholder="สินค้า / SKU (ถ้ามี)" className="border-white/10 bg-black/30 text-white placeholder:text-slate-600" /><Input value={draftCod} onChange={event => setDraftCod(event.target.value)} placeholder="COD (ถ้ามี)" className="border-white/10 bg-black/30 text-white placeholder:text-slate-600" /></div></div><div className="mt-4 flex flex-wrap items-center justify-between gap-3"><span className="text-xs text-slate-600">{draftText.length.toLocaleString()} ตัวอักษร · แก้ไขข้อมูลได้ก่อนคัดลอก</span><Button disabled={!draftText.trim() || summaryMutation.isPending} onClick={() => summaryMutation.mutate({ rawText: draftText, customerName: draftCustomer, product: draftProduct, cod: draftCod })} className="rounded-xl bg-gradient-to-r from-fuchsia-600 to-violet-600 text-white shadow-lg shadow-fuchsia-950/30 hover:from-fuchsia-500 hover:to-violet-500"><Sparkles className="mr-2 h-4 w-4" />{summaryMutation.isPending ? "กำลังสรุป…" : "สร้างใบสรุป ORD"}</Button></div>{generatedSummary && <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_0.8fr]"><div className="rounded-2xl border border-fuchsia-400/30 bg-fuchsia-500/[0.04] p-4"><div className="flex items-center justify-between gap-3"><p className="font-mono text-lg font-semibold text-fuchsia-200">{generatedSummary.orderNumber}</p><Button size="sm" variant="outline" onClick={copyGenerated} className="border-fuchsia-400/20 bg-fuchsia-500/5 text-fuchsia-200 hover:bg-fuchsia-500/10">{copied ? <Check className="mr-2 h-3.5 w-3.5" /> : <Clipboard className="mr-2 h-3.5 w-3.5" />}{copied ? "คัดลอกแล้ว" : "คัดลอกใบสรุป"}</Button></div><div className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><div><p className="text-[10px] uppercase tracking-wider text-slate-600">ลูกค้า</p><p className="mt-1 text-slate-200">{generatedSummary.customerName}</p></div><div><p className="text-[10px] uppercase tracking-wider text-slate-600">โทร</p><p className="mt-1 font-mono text-slate-300">{generatedSummary.phone || "ไม่ระบุ"}</p></div><div className="sm:col-span-2"><p className="text-[10px] uppercase tracking-wider text-slate-600">ที่อยู่</p><p className="mt-1 leading-6 text-slate-300">{generatedSummary.address || "ไม่ระบุที่อยู่"}</p></div><div><p className="text-[10px] uppercase tracking-wider text-slate-600">สินค้า</p><p className="mt-1 text-slate-200">{generatedSummary.product}</p></div><div><p className="text-[10px] uppercase tracking-wider text-slate-600">COD</p><p className="mt-1 text-fuchsia-200">{generatedSummary.cod === "ไม่ระบุ" ? generatedSummary.cod : `${generatedSummary.cod} บาท`}</p></div></div></div><pre className="overflow-auto rounded-2xl border border-white/5 bg-black/40 p-4 font-mono text-xs leading-6 text-slate-400">{generatedSummary.copyText}</pre></div>}</CardContent></Card>
 
       {liveQuery.isError ? <Card className="rounded-2xl border-red-500/30 bg-red-950/20"><CardContent className="flex items-start gap-3 p-5 text-sm text-red-200"><ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-red-400" /><div><p className="font-semibold">อ่านข้อมูลจริงไม่สำเร็จ</p><p className="mt-1 text-red-200/70">ตรวจสอบ Supabase URL, service-role key และสิทธิ์อ่านตาราง `bb_order` กับ `bb_order_items_fix`</p></div></CardContent></Card> : null}
 
