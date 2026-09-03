@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -25,9 +26,12 @@ function formatDate(value: string | Date | null | undefined) {
 }
 
 export default function Home() {
+  const { user, loading: authLoading } = useAuth();
   const utils = trpc.useUtils();
-  const { data: projects = [], isLoading: projectsLoading } = trpc.vault.projects.useQuery();
-  const { data: stats } = trpc.vault.stats.useQuery();
+  const [vaultUnlocked, setVaultUnlocked] = useState(false);
+  const [accessCode, setAccessCode] = useState("");
+  const { data: projects = [], isLoading: projectsLoading } = trpc.vault.projects.useQuery(undefined, { enabled: vaultUnlocked && user?.role === "admin" });
+  const { data: stats } = trpc.vault.stats.useQuery(undefined, { enabled: vaultUnlocked && user?.role === "admin" });
   const [projectId, setProjectId] = useState<number | null>(null);
   const [fileId, setFileId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
@@ -39,11 +43,12 @@ export default function Home() {
   const [kind, setKind] = useState<"code" | "sql" | "workflow" | "document" | "config" | "other">("code");
   const [content, setContent] = useState("");
   const [favorite, setFavorite] = useState(false);
+  const verifyAccess = trpc.vault.verifyAccessCode.useMutation({ onSuccess: result => { if (result.ok) { setVaultUnlocked(true); setAccessCode(""); } } });
 
   useEffect(() => { if (projectId === null && projects[0]) setProjectId(projects[0].id); }, [projects, projectId]);
   useEffect(() => { setFileId(null); setTitle(""); setPath(""); setLanguage("text"); setKind("code"); setContent(""); setFavorite(false); }, [projectId]);
-  const { data: files = [], isLoading: filesLoading } = trpc.vault.files.useQuery({ projectId: projectId ?? 0, search: search || undefined }, { enabled: projectId !== null });
-  const { data: selectedFile } = trpc.vault.file.useQuery({ fileId: fileId ?? 0 }, { enabled: fileId !== null });
+  const { data: files = [], isLoading: filesLoading } = trpc.vault.files.useQuery({ projectId: projectId ?? 0, search: search || undefined }, { enabled: vaultUnlocked && user?.role === "admin" && projectId !== null });
+  const { data: selectedFile } = trpc.vault.file.useQuery({ fileId: fileId ?? 0 }, { enabled: vaultUnlocked && user?.role === "admin" && fileId !== null });
   useEffect(() => { if (!selectedFile || selectedFile.id !== fileId) return; setTitle(selectedFile.title); setPath(selectedFile.path); setLanguage(selectedFile.language); setKind(selectedFile.kind); setContent(selectedFile.content); setFavorite(selectedFile.isFavorite); }, [selectedFile, fileId]);
 
   const selectedProject = useMemo(() => projects.find(project => project.id === projectId), [projects, projectId]);
@@ -65,6 +70,10 @@ export default function Home() {
     const payload = { projectId, title, path, language, kind, content } as const;
     if (fileId) updateFile.mutate({ ...payload, fileId, isFavorite: favorite }); else createFile.mutate(payload);
   };
+
+  if (authLoading) return <div className="flex min-h-[70vh] items-center justify-center text-sm text-slate-500">กำลังตรวจสอบสิทธิ์…</div>;
+  if (!user || user.role !== "admin") return <div className="flex min-h-[70vh] items-center justify-center"><Card className="max-w-md rounded-3xl border-red-500/20 bg-[#131318] text-center"><CardContent className="space-y-3 p-8"><ShieldCheck className="mx-auto h-9 w-9 text-red-300" /><h1 className="text-xl font-semibold text-white">พื้นที่สำหรับแอดมินเท่านั้น</h1><p className="text-sm leading-6 text-slate-400">บัญชีนี้ไม่มีสิทธิ์เข้าถึงคลัง SQL และโค้ดสำคัญ</p></CardContent></Card></div>;
+  if (!vaultUnlocked) return <div className="flex min-h-[70vh] items-center justify-center"><Card className="w-full max-w-md rounded-3xl border-fuchsia-500/20 bg-[#131318] shadow-2xl shadow-fuchsia-950/20"><CardContent className="space-y-5 p-8"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-fuchsia-500/10 text-fuchsia-300"><ShieldCheck className="h-7 w-7" /></div><div className="text-center"><p className="text-[10px] font-semibold uppercase tracking-[0.25em] text-fuchsia-300">SECURE PROJECT VAULT</p><h1 className="mt-2 text-2xl font-semibold text-white">ปลดล็อกคลังโค้ด</h1><p className="mt-2 text-sm leading-6 text-slate-500">เข้าสู่ระบบแอดมินแล้ว กรุณาใส่รหัสคลังเพื่อดู SQL, workflow และ source code</p></div><Input autoFocus type="password" value={accessCode} onChange={event => setAccessCode(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && accessCode) verifyAccess.mutate({ code: accessCode }); }} placeholder="รหัสคลังโค้ด" className="h-11 border-white/10 bg-black/30 text-center tracking-[0.3em] text-white placeholder:tracking-normal placeholder:text-slate-600" /><Button disabled={!accessCode || verifyAccess.isPending} onClick={() => verifyAccess.mutate({ code: accessCode })} className="w-full rounded-xl bg-gradient-to-r from-fuchsia-600 to-violet-600 hover:from-fuchsia-500 hover:to-violet-500">{verifyAccess.isPending ? "กำลังตรวจสอบ…" : "ปลดล็อกคลังโค้ด"}</Button>{verifyAccess.isSuccess && !verifyAccess.data.ok ? <p className="text-center text-xs text-red-300">รหัสไม่ถูกต้อง กรุณาลองใหม่</p> : null}</CardContent></Card></div>;
 
   return <div className="min-h-[calc(100vh-2rem)] bg-[#09090b] text-white"><div className="mx-auto max-w-[1600px] space-y-5 p-2 sm:p-4 lg:p-6">
     <header className="relative overflow-hidden rounded-3xl border border-white/10 bg-[#111116] px-6 py-7 shadow-2xl shadow-black/30 sm:px-8"><div className="pointer-events-none absolute -right-20 -top-32 h-72 w-72 rounded-full bg-fuchsia-700/20 blur-3xl" /><div className="pointer-events-none absolute bottom-0 left-1/3 h-32 w-64 rounded-full bg-violet-500/10 blur-3xl" /><div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between"><div><div className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.24em] text-fuchsia-300"><Sparkles className="h-4 w-4" /> NIGHTOPS · PROJECT VAULT</div><h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">คลังโปรเจกต์ส่วนตัว</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">ศูนย์รวม SQL, โค้ด n8n, Workflow และเอกสารของทุกแอป พร้อมประวัติการแก้ไขและค้นหาไฟล์อย่างเป็นระบบ</p></div><div className="flex items-center gap-3 rounded-2xl border border-fuchsia-400/20 bg-fuchsia-500/5 px-4 py-3 text-sm text-amber-100"><ShieldCheck className="h-5 w-5 text-fuchsia-300" /> พื้นที่ส่วนตัวของคุณ</div></div></header>

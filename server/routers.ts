@@ -3,7 +3,7 @@ import { z } from "zod";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import {
   createVaultFile,
   createVaultProject,
@@ -16,6 +16,7 @@ import {
 } from "./db";
 import { fetchLiveOrder, fetchLiveOrders, fetchLiveThreads, getLiveOrderStats } from "./supabase";
 import { generateOrderSummary } from "./order-summary";
+import { verifyVaultAccessCode } from "./vault-access";
 
 const projectInput = z.object({
   name: z.string().trim().min(1).max(180),
@@ -43,25 +44,26 @@ export const appRouter = router({
     }),
   }),
   vault: router({
-    projects: protectedProcedure.query(({ ctx }) => listVaultProjects(ctx.user.id)),
-    project: protectedProcedure.input(z.object({ projectId: z.number().int().positive() })).query(async ({ ctx, input }) => {
+    verifyAccessCode: adminProcedure.input(z.object({ code: z.string().min(1).max(128) })).mutation(({ input }) => ({ ok: verifyVaultAccessCode(input.code) })),
+    projects: adminProcedure.query(({ ctx }) => listVaultProjects(ctx.user.id)),
+    project: adminProcedure.input(z.object({ projectId: z.number().int().positive() })).query(async ({ ctx, input }) => {
       const project = await getVaultProject(ctx.user.id, input.projectId);
       if (!project) throw new TRPCError({ code: "NOT_FOUND", message: "ไม่พบโปรเจกต์นี้" });
       return project;
     }),
-    files: protectedProcedure.input(z.object({ projectId: z.number().int().positive(), search: z.string().optional() })).query(async ({ ctx, input }) => {
+    files: adminProcedure.input(z.object({ projectId: z.number().int().positive(), search: z.string().optional() })).query(async ({ ctx, input }) => {
       const project = await getVaultProject(ctx.user.id, input.projectId);
       if (!project) throw new TRPCError({ code: "NOT_FOUND", message: "ไม่พบโปรเจกต์นี้" });
       return listVaultFiles(ctx.user.id, input.projectId, input.search);
     }),
-    file: protectedProcedure.input(z.object({ fileId: z.number().int().positive() })).query(async ({ ctx, input }) => {
+    file: adminProcedure.input(z.object({ fileId: z.number().int().positive() })).query(async ({ ctx, input }) => {
       const file = await getVaultFile(ctx.user.id, input.fileId);
       if (!file) throw new TRPCError({ code: "NOT_FOUND", message: "ไม่พบไฟล์นี้" });
       return file;
     }),
-    stats: protectedProcedure.query(({ ctx }) => getVaultStats(ctx.user.id)),
-    createProject: protectedProcedure.input(projectInput).mutation(({ ctx, input }) => createVaultProject(ctx.user.id, input)),
-    createFile: protectedProcedure.input(fileInput).mutation(async ({ ctx, input }) => {
+    stats: adminProcedure.query(({ ctx }) => getVaultStats(ctx.user.id)),
+    createProject: adminProcedure.input(projectInput).mutation(({ ctx, input }) => createVaultProject(ctx.user.id, input)),
+    createFile: adminProcedure.input(fileInput).mutation(async ({ ctx, input }) => {
       const project = await getVaultProject(ctx.user.id, input.projectId);
       if (!project) throw new TRPCError({ code: "NOT_FOUND", message: "ไม่พบโปรเจกต์นี้" });
       try {
@@ -71,14 +73,14 @@ export const appRouter = router({
         throw error;
       }
     }),
-    updateFile: protectedProcedure.input(fileInput.extend({ fileId: z.number().int().positive(), isFavorite: z.boolean().optional() })).mutation(async ({ ctx, input }) => {
+    updateFile: adminProcedure.input(fileInput.extend({ fileId: z.number().int().positive(), isFavorite: z.boolean().optional() })).mutation(async ({ ctx, input }) => {
       const saved = await updateVaultFile(ctx.user.id, input.fileId, input);
       if (!saved) throw new TRPCError({ code: "NOT_FOUND", message: "ไม่พบไฟล์นี้หรือโปรเจกต์ไม่ตรงกัน" });
       return saved;
     }),
   }),
   orders: router({
-    generateSummary: protectedProcedure.input(z.object({ rawText: z.string().max(20_000), customerName: z.string().max(180).optional(), product: z.string().max(500).optional(), cod: z.string().max(40).optional() })).mutation(({ input }) => generateOrderSummary(input)),
+    generateSummary: adminProcedure.input(z.object({ rawText: z.string().max(20_000), customerName: z.string().max(180).optional(), product: z.string().max(500).optional(), cod: z.string().max(40).optional() })).mutation(({ input }) => generateOrderSummary(input)),
     live: protectedProcedure.input(z.object({ search: z.string().optional() }).optional()).query(async ({ input }) => {
       const orders = await fetchLiveOrders(input?.search);
       return { orders, stats: getLiveOrderStats(orders), source: ["bb_order", "bb_order_items_fix"] as const, fetchedAt: new Date().toISOString() };

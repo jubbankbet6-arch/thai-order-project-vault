@@ -18,8 +18,8 @@ describe("project vault", () => {
     expect(checksumForFile("Thai Order")).not.toBe(checksumForFile("Thai Order\n"));
   });
 
-  it("does not expose vault projects without authentication", async () => {
+  it("does not expose vault projects without administrator authentication", async () => {
     const caller = appRouter.createCaller(unauthenticatedContext());
-    await expect(caller.vault.projects()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    await expect(caller.vault.projects()).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });
