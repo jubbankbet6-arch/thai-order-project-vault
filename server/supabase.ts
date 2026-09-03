@@ -1,3 +1,5 @@
+import { listStoredChatMessages } from "./db";
+
 export type LiveOrderItem = {
   id?: number;
   upsert_key?: string | null;
@@ -46,6 +48,10 @@ export type LiveOrder = {
   telegram_message: string | null;
   telegram_chat_id: string | null;
   source_text: string | null;
+  raw_text_with_phone: string | null;
+  raw_text_with_phone_timed: string | null;
+  full_chunk_text: string | null;
+  chat_timeline: string[];
   items: LiveOrderItem[];
 };
 
@@ -61,6 +67,7 @@ export type LiveOrderStats = {
 export type LiveThread = {
   key: string;
   pageName: string;
+  pageId: string | null;
   threadId: string | null;
   latestAt: string | null;
   latestOrderNumber: string;
@@ -69,6 +76,7 @@ export type LiveThread = {
   orderCount: number;
   sentCount: number;
   orders: LiveOrder[];
+  chatTimeline: string[];
 };
 
 const orderSelect = [
@@ -76,7 +84,7 @@ const orderSelect = [
   "customer_name", "facebook_name", "phone", "full_address", "address_display_packer",
   "page_name", "page_id", "thread_id", "threadId", "cod_amount", "expected_cod", "sku", "th_name", "emoji",
   "display_for_packer", "telegram_status", "order_status", "audit_status", "audit_flags",
-  "cod_check_status", "is_ready_to_pack", "telegram_message", "telegram_chat_id", "clean_text", "single_cleaned_block",
+  "cod_check_status", "is_ready_to_pack", "telegram_message", "telegram_chat_id", "clean_text", "single_cleaned_block", "telegram_body",
 ].join(",");
 
 const itemSelect = [
@@ -85,7 +93,7 @@ const itemSelect = [
   "page_name", "page_id", "thread_id", "threadId", "sku", "th_name", "emoji", "display_for_packer",
   "telegram_final_mapped", "quantity", "qty", "unit_price", "expected_cod", "cod_amount", "telegram_status",
   "order_status", "audit_status", "audit_flags", "cod_check_status", "is_ready_to_pack", "telegram_message",
-  "telegram_chat_id", "clean_text", "single_cleaned_block",
+  "telegram_chat_id", "clean_text", "single_cleaned_block", "telegram_body",
 ].join(",");
 
 function config() {
@@ -119,6 +127,17 @@ function number(value: unknown) {
 
 function bool(value: unknown) {
   return value === true || value === "true" || value === 1;
+}
+
+function timeline(value: unknown) {
+  if (Array.isArray(value)) return value.map(item => String(item)).filter(Boolean);
+  if (typeof value === "string" && value.trim()) return value.split(/\n(?=\d{1,2}\/\d{1,2}\/\d{2,4})/).map(item => item.trim()).filter(Boolean);
+  return [];
+}
+
+function bodyField(row: Record<string, unknown>, field: string) {
+  const body = row.telegram_body;
+  return body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>)[field] : undefined;
 }
 
 function sortNewest(a: { created_at?: string | null; order_time?: string | null }, b: { created_at?: string | null; order_time?: string | null }) {
@@ -179,6 +198,10 @@ function normalizeOrder(row: Record<string, unknown>, items: LiveOrderItem[]): L
     telegram_message: text(row.telegram_message),
     telegram_chat_id: text(row.telegram_chat_id),
     source_text: text(row.clean_text) ?? text(row.single_cleaned_block),
+    raw_text_with_phone: text(row.raw_text_with_phone ?? bodyField(row, "raw_text_with_phone")),
+    raw_text_with_phone_timed: text(row.raw_text_with_phone_timed ?? bodyField(row, "raw_text_with_phone_timed")),
+    full_chunk_text: text(row.full_chunk_text ?? bodyField(row, "full_chunk_text")),
+    chat_timeline: timeline(row.chat_timeline ?? bodyField(row, "chat_timeline")),
     items,
   };
 }
@@ -253,7 +276,8 @@ export async function fetchLiveOrder(orderNumber: string) {
 }
 
 export async function fetchLiveThreads(search?: string) {
-  const orders = await fetchLiveOrders(search);
+  const orders = (await fetchLiveOrders(search)).filter(order => Boolean(order.page_id || order.page_name));
+  const storedMessages = await listStoredChatMessages();
   const groups = new Map<string, LiveThread>();
   for (const order of orders) {
     const key = `${order.page_id ?? order.page_name ?? "unknown"}::${order.thread_id ?? order.threadId ?? order.customer_name ?? order.order_number}`;
@@ -261,17 +285,22 @@ export async function fetchLiveThreads(search?: string) {
     const itemPreview = order.items.map(item => item.display_for_packer || item.th_name || item.sku).filter(Boolean).join(", ");
     const thread: LiveThread = existing ?? {
       key,
-      pageName: order.page_name ?? "ไม่ระบุเพจ",
+      pageName: order.page_name ?? order.page_id ?? "เพจไม่ทราบ",
+      pageId: order.page_id,
       threadId: order.thread_id ?? order.threadId,
       latestAt: order.updated_at ?? order.created_at ?? order.order_time,
       latestOrderNumber: order.order_number,
       customerName: order.customer_name,
+      chatTimeline: [],
       preview: order.source_text ?? itemPreview ?? order.display_for_packer ?? "มีออเดอร์ใหม่",
       orderCount: 0,
       sentCount: 0,
       orders: [],
     };
     thread.orders.push(order);
+    for (const line of order.chat_timeline.length ? order.chat_timeline : timeline(order.raw_text_with_phone_timed)) {
+      if (!thread.chatTimeline.includes(line)) thread.chatTimeline.push(line);
+    }
     thread.orderCount += 1;
     if (String(order.telegram_status ?? "").toUpperCase() === "SENT") thread.sentCount += 1;
     if ((Date.parse(String(order.updated_at ?? order.created_at ?? "")) || 0) > (Date.parse(String(thread.latestAt ?? "")) || 0)) {
@@ -280,6 +309,31 @@ export async function fetchLiveThreads(search?: string) {
       thread.customerName = order.customer_name;
       thread.preview = order.source_text ?? itemPreview ?? order.display_for_packer ?? thread.preview;
     }
+    groups.set(key, thread);
+  }
+  for (const message of storedMessages) {
+    const key = `${message.pageId}::${message.threadId}`;
+    const messageAt = message.occurredAt?.toISOString?.() ?? String(message.occurredAt ?? "");
+    const existing = groups.get(key);
+    const thread: LiveThread = existing ?? {
+      key,
+      pageName: message.pageName ?? message.pageId,
+      pageId: message.pageId,
+      threadId: message.threadId,
+      latestAt: messageAt,
+      latestOrderNumber: "",
+      customerName: null,
+      chatTimeline: [],
+      preview: message.text ?? "มีรูปภาพแนบ",
+      orderCount: 0,
+      sentCount: 0,
+      orders: [],
+    };
+    if ((Date.parse(messageAt) || 0) > (Date.parse(String(thread.latestAt ?? "")) || 0)) {
+      thread.latestAt = messageAt;
+      thread.preview = message.text ?? "มีรูปภาพแนบ";
+    }
+    if (message.direction === "outbound") thread.sentCount += 1;
     groups.set(key, thread);
   }
   return Array.from(groups.values()).sort((a, b) => (Date.parse(String(b.latestAt ?? "")) || 0) - (Date.parse(String(a.latestAt ?? "")) || 0));

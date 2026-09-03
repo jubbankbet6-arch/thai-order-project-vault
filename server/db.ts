@@ -7,6 +7,8 @@ import {
   vaultFiles,
   vaultProjects,
   vaultRevisions,
+  auditLogs,
+  chatMessages,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -203,4 +205,76 @@ export async function getVaultStats(ownerId: number) {
     files: Number(fileRows[0]?.count ?? 0),
     revisions: Number(revisionRows[0]?.count ?? 0),
   };
+}
+
+export async function saveChatMessage(input: {
+  providerMessageId?: string;
+  pageId: string;
+  pageName?: string;
+  threadId: string;
+  senderId: string;
+  senderType: "customer" | "admin" | "page" | "system";
+  direction: "inbound" | "outbound";
+  text?: string;
+  attachments?: unknown;
+  adminUserId?: number;
+  occurredAt?: Date;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.insert(chatMessages).values({
+    providerMessageId: input.providerMessageId ?? null,
+    pageId: input.pageId,
+    pageName: input.pageName ?? null,
+    threadId: input.threadId,
+    senderId: input.senderId,
+    senderType: input.senderType,
+    direction: input.direction,
+    text: input.text ?? null,
+    attachmentsJson: input.attachments ? JSON.stringify(input.attachments) : null,
+    adminUserId: input.adminUserId ?? null,
+    occurredAt: input.occurredAt ?? new Date(),
+  }).onDuplicateKeyUpdate({ set: { providerMessageId: input.providerMessageId ?? null } });
+}
+
+export async function listChatMessages(pageId: string, threadId: string, limit = 100) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(chatMessages).where(and(eq(chatMessages.pageId, pageId), eq(chatMessages.threadId, threadId))).orderBy(desc(chatMessages.occurredAt)).limit(limit);
+}
+
+export async function listStoredChatMessages(limit = 2000) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(chatMessages).orderBy(desc(chatMessages.occurredAt)).limit(limit);
+}
+
+export async function createAuditLog(input: {
+  actorUserId?: number;
+  actorName?: string | null;
+  action: string;
+  entityType: string;
+  entityId?: string;
+  pageId?: string;
+  threadId?: string;
+  metadata?: Record<string, unknown>;
+}) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(auditLogs).values({
+    actorUserId: input.actorUserId ?? null,
+    actorName: input.actorName ?? null,
+    action: input.action,
+    entityType: input.entityType,
+    entityId: input.entityId ?? null,
+    pageId: input.pageId ?? null,
+    threadId: input.threadId ?? null,
+    metadataJson: input.metadata ? JSON.stringify(input.metadata) : null,
+  });
+}
+
+export async function listAuditLogs(limit = 100) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).limit(limit);
 }

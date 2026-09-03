@@ -89,8 +89,56 @@ export const vaultRevisions = mysqlTable(
   }),
 );
 
+/** Raw inbound/outbound messages received from Meta or sent by an admin. */
+export const chatMessages = mysqlTable(
+  "chat_messages",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    provider: varchar("provider", { length: 32 }).default("meta").notNull(),
+    providerMessageId: varchar("providerMessageId", { length: 255 }),
+    pageId: varchar("pageId", { length: 128 }).notNull(),
+    pageName: varchar("pageName", { length: 180 }),
+    threadId: varchar("threadId", { length: 255 }).notNull(),
+    senderId: varchar("senderId", { length: 255 }).notNull(),
+    senderType: mysqlEnum("senderType", ["customer", "admin", "page", "system"]).default("customer").notNull(),
+    direction: mysqlEnum("direction", ["inbound", "outbound"]).default("inbound").notNull(),
+    text: longtext("text"),
+    attachmentsJson: longtext("attachmentsJson"),
+    adminUserId: int("adminUserId"),
+    occurredAt: timestamp("occurredAt").defaultNow().notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => ({
+    threadIdx: index("chat_messages_thread_idx").on(table.pageId, table.threadId, table.occurredAt),
+    providerMessageUnique: uniqueIndex("chat_messages_provider_message_unique").on(table.provider, table.providerMessageId),
+  }),
+);
+
+/** Immutable audit trail for admin actions and provider events. */
+export const auditLogs = mysqlTable(
+  "audit_logs",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    actorUserId: int("actorUserId"),
+    actorName: varchar("actorName", { length: 180 }),
+    action: varchar("action", { length: 80 }).notNull(),
+    entityType: varchar("entityType", { length: 80 }).notNull(),
+    entityId: varchar("entityId", { length: 255 }),
+    pageId: varchar("pageId", { length: 128 }),
+    threadId: varchar("threadId", { length: 255 }),
+    metadataJson: longtext("metadataJson"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => ({
+    actorIdx: index("audit_logs_actor_idx").on(table.actorUserId, table.createdAt),
+    entityIdx: index("audit_logs_entity_idx").on(table.entityType, table.entityId, table.createdAt),
+  }),
+);
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type VaultProject = typeof vaultProjects.$inferSelect;
 export type VaultFile = typeof vaultFiles.$inferSelect;
 export type VaultRevision = typeof vaultRevisions.$inferSelect;
+export type ChatMessage = typeof chatMessages.$inferSelect;
+export type AuditLog = typeof auditLogs.$inferSelect;

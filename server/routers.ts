@@ -13,10 +13,15 @@ import {
   listVaultFiles,
   listVaultProjects,
   updateVaultFile,
+  createAuditLog,
+  listAuditLogs,
+  listChatMessages,
+  saveChatMessage,
 } from "./db";
 import { fetchLiveOrder, fetchLiveOrders, fetchLiveThreads, getLiveOrderStats } from "./supabase";
 import { generateOrderSummary } from "./order-summary";
 import { verifyVaultAccessCode } from "./vault-access";
+import { sendMetaMessage } from "./meta";
 
 const projectInput = z.object({
   name: z.string().trim().min(1).max(180),
@@ -80,13 +85,23 @@ export const appRouter = router({
     }),
   }),
   orders: router({
-    generateSummary: adminProcedure.input(z.object({ rawText: z.string().max(20_000), customerName: z.string().max(180).optional(), product: z.string().max(500).optional(), cod: z.string().max(40).optional() })).mutation(({ input }) => generateOrderSummary(input)),
+    generateSummary: adminProcedure.input(z.object({ rawText: z.string().max(20_000), customerName: z.string().max(180).optional(), product: z.string().max(500).optional(), cod: z.string().max(40).optional() })).mutation(async ({ ctx, input }) => { const summary = generateOrderSummary(input); await createAuditLog({ actorUserId: ctx.user.id, actorName: ctx.user.name, action: "order_summary_created", entityType: "order_draft", entityId: summary.orderNumber, metadata: { hasCustomer: summary.customerName !== "ไม่ระบุชื่อ", hasPhone: Boolean(summary.phone), hasAddress: Boolean(summary.address), hasProduct: summary.product !== "ไม่ระบุสินค้า", hasCod: summary.cod !== "ไม่ระบุ" } }); return summary; }),
     live: protectedProcedure.input(z.object({ search: z.string().optional() }).optional()).query(async ({ input }) => {
       const orders = await fetchLiveOrders(input?.search);
       return { orders, stats: getLiveOrderStats(orders), source: ["bb_order", "bb_order_items_fix"] as const, fetchedAt: new Date().toISOString() };
     }),
     liveDetail: protectedProcedure.input(z.object({ orderNumber: z.string().trim().min(1) })).query(({ input }) => fetchLiveOrder(input.orderNumber)),
     threads: protectedProcedure.input(z.object({ search: z.string().optional() }).optional()).query(({ input }) => fetchLiveThreads(input?.search)),
+  }),
+  chat: router({
+    messages: protectedProcedure.input(z.object({ pageId: z.string().min(1), threadId: z.string().min(1) })).query(({ input }) => listChatMessages(input.pageId, input.threadId)),
+    sendReply: adminProcedure.input(z.object({ pageId: z.string().min(1), threadId: z.string().min(1), recipientId: z.string().min(1), text: z.string().max(4_000).optional(), imageUrl: z.string().url().optional() })).mutation(async ({ ctx, input }) => {
+      const result = await sendMetaMessage(input);
+      await saveChatMessage({ providerMessageId: result.message_id, pageId: input.pageId, threadId: input.threadId, senderId: input.pageId, senderType: "admin", direction: "outbound", text: input.text, attachments: input.imageUrl ? [{ type: "image", url: input.imageUrl }] : undefined, adminUserId: ctx.user.id });
+      await createAuditLog({ actorUserId: ctx.user.id, actorName: ctx.user.name, action: "message_sent", entityType: "chat_message", entityId: result.message_id, pageId: input.pageId, threadId: input.threadId, metadata: { hasText: Boolean(input.text), hasImage: Boolean(input.imageUrl) } });
+      return { ok: true, messageId: result.message_id };
+    }),
+    audit: adminProcedure.query(() => listAuditLogs()),
   }),
 });
 
