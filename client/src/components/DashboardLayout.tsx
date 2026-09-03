@@ -21,13 +21,16 @@ import {
 } from "@/components/ui/sidebar";
 import { startLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { Database, LogOut, PanelLeft } from "lucide-react";
+import { Database, LayoutDashboard, LogOut, PanelLeft } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { Button } from "./ui/button";
 
-const menuItems = [{ icon: Database, label: "คลังโปรเจกต์", path: "/" }];
+const menuItems = [
+  { icon: LayoutDashboard, label: "Order Control", path: "/orders" },
+  { icon: Database, label: "คลังโปรเจกต์", path: "/" },
+];
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
 const DEFAULT_WIDTH = 280;
 const MIN_WIDTH = 200;

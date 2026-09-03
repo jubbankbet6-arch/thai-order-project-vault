@@ -6,10 +6,14 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import DashboardLayout from "./components/DashboardLayout";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
+import OrderControl from "./pages/OrderControl";
 
 function Router() {
   return (
     <Switch>
+      <Route path="/orders">
+        <DashboardLayout><OrderControl /></DashboardLayout>
+      </Route>
       <Route path="/">
         <DashboardLayout><Home /></DashboardLayout>
       </Route>
