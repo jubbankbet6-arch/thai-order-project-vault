@@ -7,12 +7,16 @@ import DashboardLayout from "./components/DashboardLayout";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import OrderControl from "./pages/OrderControl";
+import ChatHub from "./pages/ChatHub";
 
 function Router() {
   return (
     <Switch>
       <Route path="/orders">
         <DashboardLayout><OrderControl /></DashboardLayout>
+      </Route>
+      <Route path="/chats">
+        <DashboardLayout><ChatHub /></DashboardLayout>
       </Route>
       <Route path="/">
         <DashboardLayout><Home /></DashboardLayout>

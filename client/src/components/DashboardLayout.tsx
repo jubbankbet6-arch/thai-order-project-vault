@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { startLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { Database, LayoutDashboard, LogOut, PanelLeft } from "lucide-react";
+import { Database, LayoutDashboard, LogOut, MessageCircle, PanelLeft } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
@@ -29,6 +29,7 @@ import { Button } from "./ui/button";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Order Control", path: "/orders" },
+  { icon: MessageCircle, label: "รวมแชทเพจ", path: "/chats" },
   { icon: Database, label: "คลังโปรเจกต์", path: "/" },
 ];
 const SIDEBAR_WIDTH_KEY = "sidebar-width";
@@ -60,7 +61,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     );
   }
 
-  return <SidebarProvider style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}><DashboardLayoutContent setSidebarWidth={setSidebarWidth}>{children}</DashboardLayoutContent></SidebarProvider>;
+  return <SidebarProvider className="bg-[#09070d] text-white" style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}><DashboardLayoutContent setSidebarWidth={setSidebarWidth}>{children}</DashboardLayoutContent></SidebarProvider>;
 }
 
 type DashboardLayoutContentProps = { children: React.ReactNode; setSidebarWidth: (width: number) => void };
@@ -103,13 +104,13 @@ function DashboardLayoutContent({ children, setSidebarWidth }: DashboardLayoutCo
 
   return <>
     <div className="relative" ref={sidebarRef}>
-      <Sidebar collapsible="icon" className="border-r-0" disableTransition={isResizing}>
-        <SidebarHeader className="h-16 justify-center"><div className="flex w-full items-center gap-3 px-2"><button onClick={toggleSidebar} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg hover:bg-accent" aria-label="เปิดหรือปิดเมนู"><PanelLeft className="h-4 w-4 text-muted-foreground" /></button>{!isCollapsed && <div className="flex min-w-0 items-center gap-2"><span className="truncate font-semibold tracking-tight">Project Vault</span></div>}</div></SidebarHeader>
-        <SidebarContent className="gap-0"><SidebarMenu className="px-2 py-1">{menuItems.map(item => <SidebarMenuItem key={item.path}><SidebarMenuButton isActive={location === item.path} onClick={() => setLocation(item.path)} tooltip={item.label} className="h-10 font-normal"><item.icon className={`h-4 w-4 ${location === item.path ? "text-primary" : ""}`} /><span>{item.label}</span></SidebarMenuButton></SidebarMenuItem>)}</SidebarMenu></SidebarContent>
-        <SidebarFooter className="p-3"><DropdownMenu><DropdownMenuTrigger asChild><button className="group flex w-full items-center gap-3 rounded-lg px-1 py-1 text-left hover:bg-accent/50"><Avatar className="h-9 w-9 shrink-0 border"><AvatarFallback className="text-xs font-medium">{user?.name?.charAt(0).toUpperCase()}</AvatarFallback></Avatar><div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden"><p className="truncate text-sm font-medium leading-none">{user?.name || "-"}</p><p className="mt-1.5 truncate text-xs text-muted-foreground">{user?.email || "-"}</p></div></button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-48"><DropdownMenuItem onClick={logout} className="cursor-pointer text-destructive focus:text-destructive"><LogOut className="mr-2 h-4 w-4" /><span>ออกจากระบบ</span></DropdownMenuItem></DropdownMenuContent></DropdownMenu></SidebarFooter>
+      <Sidebar collapsible="icon" className="border-r border-violet-500/10 bg-[#0d0a12] text-violet-50 [&_[data-slot=sidebar-inner]]:bg-[#0d0a12] [&_[data-slot=sidebar-inner]]:text-violet-50" disableTransition={isResizing}>
+        <SidebarHeader className="h-16 justify-center"><div className="flex w-full items-center gap-3 px-2"><button onClick={toggleSidebar} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-violet-200/60 hover:bg-violet-500/10 hover:text-fuchsia-200" aria-label="เปิดหรือปิดเมนู"><PanelLeft className="h-4 w-4" /></button>{!isCollapsed && <div className="flex min-w-0 items-center gap-2"><span className="truncate font-semibold tracking-tight text-violet-50">NIGHTOPS</span></div>}</div></SidebarHeader>
+        <SidebarContent className="gap-0"><SidebarMenu className="px-2 py-1">{menuItems.map(item => <SidebarMenuItem key={item.path}><SidebarMenuButton isActive={location === item.path} onClick={() => setLocation(item.path)} tooltip={item.label} className="h-10 font-normal text-violet-100/55 hover:bg-violet-500/10 hover:text-violet-50 data-[active=true]:bg-fuchsia-500/10 data-[active=true]:text-fuchsia-200"><item.icon className={`h-4 w-4 ${location === item.path ? "text-fuchsia-300" : ""}`} /><span>{item.label}</span></SidebarMenuButton></SidebarMenuItem>)}</SidebarMenu></SidebarContent>
+        <SidebarFooter className="p-3"><DropdownMenu><DropdownMenuTrigger asChild><button className="group flex w-full items-center gap-3 rounded-lg px-1 py-1 text-left hover:bg-violet-500/10"><Avatar className="h-9 w-9 shrink-0 border border-violet-400/20 bg-violet-500/10"><AvatarFallback className="bg-transparent text-xs font-medium text-fuchsia-200">{user?.name?.charAt(0).toUpperCase()}</AvatarFallback></Avatar><div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden"><p className="truncate text-sm font-medium leading-none text-violet-50">{user?.name || "-"}</p><p className="mt-1.5 truncate text-xs text-violet-100/35">{user?.email || "-"}</p></div></button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-48 border-violet-500/20 bg-[#161020] text-violet-50"><DropdownMenuItem onClick={logout} className="cursor-pointer text-red-300 focus:bg-red-500/10 focus:text-red-200"><LogOut className="mr-2 h-4 w-4" /><span>ออกจากระบบ</span></DropdownMenuItem></DropdownMenuContent></DropdownMenu></SidebarFooter>
       </Sidebar>
       <div className={`absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-primary/20 ${isCollapsed ? "hidden" : ""}`} style={{ zIndex: 50 }} onMouseDown={() => !isCollapsed && setIsResizing(true)} />
     </div>
-    <SidebarInset>{isMobile && <div className="sticky top-0 z-40 flex h-14 items-center justify-between border-b bg-background/95 px-2 backdrop-blur"><div className="flex items-center gap-2"><SidebarTrigger className="h-9 w-9 rounded-lg bg-background" /><span className="text-foreground">{activeMenuItem?.label ?? "เมนู"}</span></div></div>}<main className="flex-1 p-4">{children}</main></SidebarInset>
+    <SidebarInset className="bg-[#09070d]">{isMobile && <div className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-violet-500/10 bg-[#0d0a12]/95 px-2 backdrop-blur"><div className="flex items-center gap-2"><SidebarTrigger className="h-9 w-9 rounded-lg text-violet-100 hover:bg-violet-500/10" /><span className="text-violet-50">{activeMenuItem?.label ?? "เมนู"}</span></div></div>}<main className="flex-1 p-4">{children}</main></SidebarInset>
   </>;
 }
