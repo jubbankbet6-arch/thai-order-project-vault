@@ -93,10 +93,11 @@ for (const item of $input.all()) {
   }
 }
 
-// Do not invent a status row in the raw message stream. The processors return
-// zero items for an empty window, so no HTTP Upsert can create a null-key row.
+// Keep the n8n workflow alive without inventing a chat message. Downstream
+// processors pass this status to an IF node, whose true branch must be
+// record_type == "message" before the Supabase HTTP Upsert.
 if (!output.length) {
-  return [];
+  return [{ json: { record_type: "sync_status", status: "empty", message_count: 0, fetched_at: now } }];
 }
 
 return output;
