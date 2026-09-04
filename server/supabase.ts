@@ -79,6 +79,7 @@ export type LiveThread = {
   preview: string;
   orderCount: number;
   sentCount: number;
+  messageCount: number;
   orders: LiveOrder[];
   chatTimeline: string[];
 };
@@ -337,11 +338,15 @@ export async function fetchLiveThreads(search?: string) {
       preview: order.source_text ?? itemPreview ?? order.display_for_packer ?? "มีออเดอร์ใหม่",
       orderCount: 0,
       sentCount: 0,
+      messageCount: 0,
       orders: [],
     };
     thread.orders.push(order);
     for (const line of order.chat_timeline.length ? order.chat_timeline : timeline(order.raw_text_with_phone_timed)) {
-      if (!thread.chatTimeline.includes(line)) thread.chatTimeline.push(line);
+      if (!thread.chatTimeline.includes(line)) {
+        thread.chatTimeline.push(line);
+        thread.messageCount += 1;
+      }
     }
     thread.orderCount += 1;
     if (String(order.telegram_status ?? "").toUpperCase() === "SENT") thread.sentCount += 1;
@@ -369,6 +374,7 @@ export async function fetchLiveThreads(search?: string) {
       preview: message.text ?? "มีรูปภาพแนบ",
       orderCount: 0,
       sentCount: 0,
+      messageCount: 0,
       orders: [],
     };
     if ((Date.parse(messageAt) || 0) > (Date.parse(String(thread.latestAt ?? "")) || 0)) {
@@ -376,6 +382,7 @@ export async function fetchLiveThreads(search?: string) {
       thread.preview = message.text ?? "มีรูปภาพแนบ";
     }
     if (message.direction === "outbound") thread.sentCount += 1;
+    thread.messageCount += 1;
     groups.set(key, thread);
   }
   return Array.from(groups.values()).sort((a, b) => (Date.parse(String(b.latestAt ?? "")) || 0) - (Date.parse(String(a.latestAt ?? "")) || 0));
