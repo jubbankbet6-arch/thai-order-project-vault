@@ -8,7 +8,8 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import OrderControl from "./pages/OrderControl";
 import ChatHub from "./pages/ChatHub";
-import ProductAliases from "./pages/ProductAliases";
+import ProductAliases from "@/pages/ProductAliases";
+import OrderPerformance from "@/pages/OrderPerformance";
 
 function Router() {
   return (
@@ -21,6 +22,9 @@ function Router() {
       </Route>
       <Route path="/aliases">
         <DashboardLayout><ProductAliases /></DashboardLayout>
+      </Route>
+      <Route path="/order-performance">
+        <DashboardLayout><OrderPerformance /></DashboardLayout>
       </Route>
       <Route path="/">
         <DashboardLayout><Home /></DashboardLayout>

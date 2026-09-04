@@ -331,6 +331,17 @@ export async function fetchOrdersForThread(pageId: string, threadId: string): Pr
   const cached = recentOrderCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.value;
   const { baseUrl, key } = config();
+  const rpcResponse = await fetch(`${baseUrl}/rest/v1/rpc/get_latest_orders_for_thread`, {
+    method: "POST",
+    headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ p_page_id: pageId, p_thread_id: threadId, p_limit: 20 }),
+  });
+  if (rpcResponse.ok) {
+    const rows = await rpcResponse.json() as Array<Record<string, unknown>>;
+    const result = rows.map(row => normalizeOrder(row, [])).sort(sortNewest);
+    recentOrderCache.set(cacheKey, { expiresAt: Date.now() + ORDER_CACHE_TTL_MS, value: result });
+    return result;
+  }
   const request = async (table: string) => {
     const url = new URL(`${baseUrl}/rest/v1/${table}`);
     url.searchParams.set("select", orderSelect);
