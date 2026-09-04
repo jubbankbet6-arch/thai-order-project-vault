@@ -1,9 +1,8 @@
 // n8n Code node: 🌌 HERMES_FETCH_FACEBOOK_ALL
 // Mode: Run Once for All Items
-// Reads page_id/access_token from 🔮BB_EMPIRE_DATABASE; never returns access_token.
-// Sequential fetching is intentional: stable for the current 7-page workload (~1m12s).
+// Input: 🔮 BB_EMPIRE_DATABASE_FLATTEN (1 item = 1 enabled page).
+// n8n executes the HTTP request once per input item; no config lookup loop here.
 
-const configItems = $("🔮BB_EMPIRE_DATABASE").all();
 const now = new Date();
 const since = new Date(now.getTime() - 5 * 60 * 60 * 1000);
 const fields = "id,updated_time,message_count,unread_count,participants,can_reply,messages.limit(30){id,message,created_time,from{id,name},is_echo,attachments{mime_type,name,file_url,url},shares{name,link},sticker}";
@@ -16,65 +15,46 @@ function errorText(error) {
   try { return JSON.stringify(value); } catch { return "Unknown Facebook API error"; }
 }
 
-const pages = configItems
-  .map(item => item.json)
-  .map(page => ({
-    page_index: String(page.page_index ?? page.pageIndex ?? page.row_number ?? ""),
-    page_id: String(page.page_id ?? page.pageId ?? ""),
-    page_name: page.page_name ?? page.pageName ?? null,
-    system_status: String(page.system_status ?? page.status ?? "OFF").toUpperCase(),
-    access_token: String(page.access_token ?? page.page_access_token ?? page.pageAccessToken ?? page.token ?? ""),
-    assigned_agent: page.assigned_agent ?? page.assignedAgent ?? null,
-    assigned_hashtag: page.assigned_hashtag ?? page.assigned_Hashtag ?? null,
-  }))
-  .filter(page => page.page_id && page.system_status === "ON" && page.access_token);
-
-if (!pages.length) throw new Error("ไม่พบเพจที่มี page_id, Token และสถานะ ON จาก 🔮BB_EMPIRE_DATABASE");
-
 const output = [];
-for (const page of pages) {
+for (const item of $input.all()) {
+  const page = item.json ?? {};
+  const pageId = String(page.page_id ?? page.pageId ?? "");
+  const token = String(page.access_token ?? page.page_access_token ?? page.pageAccessToken ?? page.token ?? "");
+  const status = String(page.system_status ?? page.status ?? "OFF").toUpperCase();
+
+  if (!pageId || status !== "ON" || !token) continue;
+
   try {
     const response = await this.helpers.httpRequest({
       method: "GET",
-      url: `https://graph.facebook.com/v20.0/${encodeURIComponent(page.page_id)}/conversations`,
-      qs: {
-        fields,
-        limit: "30",
-        since: since.toISOString(),
-        until: now.toISOString(),
-        access_token: page.access_token,
-      },
+      url: `https://graph.facebook.com/v20.0/${encodeURIComponent(pageId)}/conversations`,
+      qs: { fields, limit: "30", since: since.toISOString(), until: now.toISOString(), access_token: token },
       json: true,
     });
-    output.push({
-      json: {
-        page_index: page.page_index,
-        page_id: page.page_id,
-        page_name: page.page_name,
-        system_status: page.system_status,
-        assigned_agent: page.assigned_agent,
-        assigned_hashtag: page.assigned_hashtag,
-        fetched_at: now.toISOString(),
-        fetch_status: "success",
-        facebook_response: response,
-      },
-    });
+    output.push({ json: {
+      page_index: page.page_index ?? page.pageIndex ?? page.row_number ?? null,
+      page_id: pageId,
+      page_name: page.page_name ?? page.pageName ?? null,
+      system_status: status,
+      assigned_agent: page.assigned_agent ?? page.assignedAgent ?? null,
+      assigned_hashtag: page.assigned_hashtag ?? page.assigned_Hashtag ?? null,
+      fetched_at: now.toISOString(),
+      fetch_status: "success",
+      facebook_response: response,
+    } });
   } catch (error) {
-    output.push({
-      json: {
-        page_index: page.page_index,
-        page_id: page.page_id,
-        page_name: page.page_name,
-        system_status: page.system_status,
-        fetched_at: now.toISOString(),
-        fetch_status: "error",
-        fetch_error: errorText(error),
-        facebook_response: { data: [] },
-      },
-    });
+    output.push({ json: {
+      page_index: page.page_index ?? page.pageIndex ?? page.row_number ?? null,
+      page_id: pageId,
+      page_name: page.page_name ?? page.pageName ?? null,
+      system_status: status,
+      fetched_at: now.toISOString(),
+      fetch_status: "error",
+      fetch_error: errorText(error),
+      facebook_response: { data: [] },
+    } });
   }
 }
-
 return output;
 
 // Security: access_token is used only inside this node and is never returned.
