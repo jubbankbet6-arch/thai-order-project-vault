@@ -44,6 +44,10 @@ function imageUrls(attachments) {
   return urls;
 }
 
+function isMessageObject(value) {
+  return Boolean(value && typeof value === "object" && (value.id || value.message !== undefined || value.created_time || value.from));
+}
+
 function findMessages(value, context = {}) {
   if (Array.isArray(value)) {
     for (const item of value) findMessages(item, context);
@@ -63,7 +67,15 @@ function findMessages(value, context = {}) {
   const pageName = configPage?.page_name ?? context.pageName ?? value.page_name ?? value.pageName ?? null;
   const conversationId = String(context.conversationId ?? value.conversation_id ?? value.thread_id ?? value.id ?? "");
   const participants = Array.isArray(value.participants?.data) ? value.participants.data : context.participants ?? [];
-  const messages = Array.isArray(value.messages?.data) ? value.messages.data : null;
+  // Support both Graph conversation shape (messages.data) and the actual
+  // n8n payload shape observed in this workflow: item[index].data.data[].
+  const messages = Array.isArray(value.messages?.data)
+    ? value.messages.data
+    : Array.isArray(value.data?.data) && value.data.data.some(isMessageObject)
+      ? value.data.data
+      : Array.isArray(value.data) && value.data.some(isMessageObject)
+        ? value.data
+        : null;
 
   if (messages) {
     const pageParticipant = participants.find(p => String(p?.id ?? "") === pageId);
@@ -136,7 +148,10 @@ const inputItems = $input.all();
 // Accept either one config object per item or a single item containing an array.
 for (const item of inputItems) {
   const value = item.json ?? {};
-  const candidates = Array.isArray(value) ? value : Array.isArray(value.data) && !value.facebook_response ? value.data : [value];
+  const indexedValues = !Array.isArray(value) && !value.facebook_response && !value.data && Object.keys(value).every(key => /^\d+$/.test(key))
+    ? Object.values(value)
+    : [];
+  const candidates = Array.isArray(value) ? value : indexedValues.length ? indexedValues : Array.isArray(value.data) && !value.facebook_response ? value.data : [value];
   for (const candidate of candidates) {
     const pageId = String(candidate?.page_id ?? candidate?.pageId ?? "");
     if (!pageId || !candidate || typeof candidate !== "object") continue;
@@ -154,12 +169,18 @@ PAGE_BY_ID = new Map(MASTERCONFIG.map(page => [String(page.page_id), page]));
 
 for (const item of inputItems) {
   const source = item.json ?? {};
-  const graph = source.facebook_response ?? source.body ?? source;
-  findMessages(graph, {
-    pageId: source.source_page_id ?? source.page_id ?? source.pageId ?? source.page_id_inherited,
-    pageName: source.source_page_name ?? source.page_name ?? source.pageName,
-    fetchedAt: source.fetched_at ?? now,
-  });
+  const indexedValues = !Array.isArray(source) && !source.facebook_response && !source.data && Object.keys(source).every(key => /^\d+$/.test(key))
+    ? Object.values(source)
+    : [];
+  const sources = indexedValues.length ? indexedValues : [source];
+  for (const chunk of sources) {
+    const graph = chunk.facebook_response ?? chunk.body ?? chunk;
+    findMessages(graph, {
+      pageId: chunk.source_page_id ?? chunk.page_id ?? chunk.pageId ?? chunk.page_id_inherited,
+      pageName: chunk.source_page_name ?? chunk.page_name ?? chunk.pageName,
+      fetchedAt: chunk.fetched_at ?? now,
+    });
+  }
 }
 
 return output;
