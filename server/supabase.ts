@@ -95,6 +95,15 @@ export type LiveProductMapping = {
   aliases?: string | null;
 };
 
+export type StockProduct = LiveProductMapping & {
+  id: number;
+  thName: string | null;
+  stockQty: number | null;
+  stockStatus: string | null;
+  status: string | null;
+  updatedAt: string | null;
+};
+
 export type ExternalChatMessage = {
   id: number;
   providerMessageId: string | null;
@@ -382,6 +391,35 @@ export async function fetchLiveProductMappings(): Promise<LiveProductMapping[]> 
     emoji: text(row.emoji),
     aliases: text(row.alias),
   })).filter(item => item.sku && item.label).sort((a, b) => a.sku.localeCompare(b.sku));
+}
+
+export async function fetchStockProducts(): Promise<StockProduct[]> {
+  const rows = await getRows<Record<string, unknown>>("product_master", "id,sku,label_display,display_for_packer,name_standard,unit_price,emoji,alias,th_name,stock_qty,stock_status,status,updated_at", 2000);
+  return rows.map(row => ({
+    id: number(row.id) ?? 0,
+    sku: String(row.sku ?? ""),
+    label: String(row.label_display ?? row.display_for_packer ?? row.name_standard ?? row.sku ?? ""),
+    price: number(row.unit_price),
+    emoji: text(row.emoji),
+    aliases: text(row.alias),
+    thName: text(row.th_name),
+    stockQty: number(row.stock_qty),
+    stockStatus: text(row.stock_status),
+    status: text(row.status),
+    updatedAt: text(row.updated_at),
+  })).filter(item => item.sku && item.label).sort((a, b) => a.label.localeCompare(b.label, "th"));
+}
+
+export async function updateStockProduct(id: number, input: { stockQty?: number; stockStatus?: string; labelDisplay?: string; unitPrice?: number }) {
+  const { baseUrl, key } = config();
+  const patch: Record<string, unknown> = {};
+  if (input.stockQty !== undefined) patch.stock_qty = input.stockQty;
+  if (input.stockStatus !== undefined) patch.stock_status = input.stockStatus;
+  if (input.labelDisplay !== undefined) patch.label_display = input.labelDisplay;
+  if (input.unitPrice !== undefined) patch.unit_price = input.unitPrice;
+  const response = await fetch(`${baseUrl}/rest/v1/product_master?id=eq.${encodeURIComponent(String(id))}`, { method: "PATCH", headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json", Prefer: "return=representation" }, body: JSON.stringify(patch) });
+  if (!response.ok) throw new Error(`Supabase product_master update returned HTTP ${response.status}: ${(await response.text()).slice(0, 300)}`);
+  return fetchStockProducts();
 }
 
 function jsonText(value: unknown) {

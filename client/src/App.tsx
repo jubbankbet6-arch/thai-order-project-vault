@@ -10,6 +10,7 @@ import OrderControl from "./pages/OrderControl";
 import ChatHub from "./pages/ChatHub";
 import ProductAliases from "@/pages/ProductAliases";
 import OrderPerformance from "@/pages/OrderPerformance";
+import StockRoom from "@/pages/StockRoom";
 
 function Router() {
   return (
@@ -25,6 +26,9 @@ function Router() {
       </Route>
       <Route path="/order-performance">
         <DashboardLayout><OrderPerformance /></DashboardLayout>
+      </Route>
+      <Route path="/stock-room">
+        <DashboardLayout><StockRoom /></DashboardLayout>
       </Route>
       <Route path="/">
         <DashboardLayout><Home /></DashboardLayout>

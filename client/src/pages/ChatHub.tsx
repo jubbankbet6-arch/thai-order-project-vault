@@ -57,7 +57,7 @@ export default function ChatHub() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [summaryText, setSummaryText] = useState("");
-  const [summary, setSummary] = useState<{ orderNumber: string; customerName: string; phone: string; address: string; product: string; cod: string; copyText: string; timingMs?: { total: number; parse: number; dataLookup: number; audit: number } } | null>(null);
+  const [summary, setSummary] = useState<{ orderNumber: string; customerName: string; phone: string; address: string; product: string; cod: string; copyText: string; unitPrice?: number | null; timingMs?: { total: number; parse: number; dataLookup: number; audit: number } } | null>(null);
   const [messageFilter, setMessageFilter] = useState<"all" | "customer" | "page">("all");
   const [copied, setCopied] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);

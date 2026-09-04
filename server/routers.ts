@@ -21,7 +21,7 @@ import {
   createProductAlias,
   updateProductAlias,
 } from "./db";
-import { fetchExternalChatMessages, fetchLiveOrder, fetchLiveOrders, fetchOrdersForThread, fetchLiveProductMappings, fetchLiveThreads, getLiveOrderStats, syncProductAliasToMaster } from "./supabase";
+import { fetchExternalChatMessages, fetchLiveOrder, fetchLiveOrders, fetchOrdersForThread, fetchLiveProductMappings, fetchLiveThreads, fetchStockProducts, getLiveOrderStats, syncProductAliasToMaster, updateStockProduct } from "./supabase";
 import { generateOrderSummary } from "./order-summary";
 import { verifyVaultAccessCode } from "./vault-access";
 import { sendMetaMessage } from "./meta";
@@ -106,13 +106,16 @@ export const appRouter = router({
       const parseStartedAt = performance.now();
       const summary = generateOrderSummary({ ...input, product: mappedProduct, productAliases: aliases });
       const parseMs = performance.now() - parseStartedAt;
+      const catalog = await fetchLiveProductMappings();
+      const productMatch = catalog.find(item => `${item.label} ${item.sku} ${item.aliases ?? ""}`.toLowerCase().includes(summary.product.toLowerCase().replace(/\s+\d+(?:\.\d+)?\s*คอต.*$/i, "").trim()));
+      const unitPrice = productMatch?.price ?? null;
       const auditStartedAt = performance.now();
       const preAuditMs = performance.now() - startedAt;
       const auditMs = performance.now() - auditStartedAt;
       const total = performance.now() - startedAt;
       await createAuditLog({ actorUserId: ctx.user.id, actorName: ctx.user.name, action: "order_summary_created", entityType: "order_draft", entityId: summary.orderNumber, pageId: input.pageId, threadId: input.threadId, metadata: { hasCustomer: summary.customerName !== "ไม่ระบุชื่อ", hasPhone: Boolean(summary.phone), hasAddress: Boolean(summary.address), hasProduct: summary.product !== "ไม่ระบุสินค้า", hasCod: summary.cod !== "ไม่ระบุ", timingMs: { total: Math.round(total), parse: Math.round(parseMs), dataLookup: Math.round(Math.max(preAuditMs - parseMs, 0)), audit: Math.round(auditMs) } } });
       console.info(`[NIGHTOPS] order-summary total ${Math.round(total)}ms (pre-audit ${Math.round(preAuditMs)}ms, parse ${Math.round(parseMs)}ms, audit ${Math.round(auditMs)}ms)`);
-      return { ...summary, timingMs: { total: Math.round(total), parse: Math.round(parseMs), dataLookup: Math.round(Math.max(preAuditMs - parseMs, 0)), audit: Math.round(auditMs) } };
+      return { ...summary, unitPrice, copyText: unitPrice == null ? summary.copyText : `${summary.copyText}\nราคากลาง ${unitPrice.toLocaleString("th-TH")} บาท`, timingMs: { total: Math.round(total), parse: Math.round(parseMs), dataLookup: Math.round(Math.max(preAuditMs - parseMs, 0)), audit: Math.round(auditMs) } };
     }),
     summaryTimings: adminProcedure.input(z.object({ limit: z.number().int().min(1).max(100).optional() }).optional()).query(async ({ input }) => {
       const rows = await listAuditLogs(input?.limit ?? 20, "order_summary_created");
@@ -131,6 +134,10 @@ export const appRouter = router({
     catalog: adminProcedure.query(() => fetchLiveProductMappings()),
     create: adminProcedure.input(z.object({ alias: z.string().trim().min(1).max(180), canonicalSku: z.string().trim().min(1).max(120), canonicalLabel: z.string().trim().min(1).max(255) })).mutation(async ({ ctx, input }) => { const aliases = await createProductAlias(ctx.user.id, input); const sync = await syncProductAliasToMaster(input); return { aliases, sync }; }),
     update: adminProcedure.input(z.object({ id: z.number().int().positive(), alias: z.string().trim().min(1).max(180), canonicalSku: z.string().trim().min(1).max(120), canonicalLabel: z.string().trim().min(1).max(255), isActive: z.boolean() })).mutation(async ({ ctx, input }) => { const aliases = await updateProductAlias(ctx.user.id, input.id, input); const sync = input.isActive ? await syncProductAliasToMaster(input) : { synced: false, sku: input.canonicalSku, aliasCount: 0 }; return { aliases, sync }; }),
+  }),
+  stock: router({
+    products: protectedProcedure.query(() => fetchStockProducts()),
+    update: adminProcedure.input(z.object({ id: z.number().int().positive(), stockQty: z.number().min(0).optional(), stockStatus: z.string().trim().max(80).optional(), labelDisplay: z.string().trim().max(255).optional(), unitPrice: z.number().min(0).optional() })).mutation(({ input }) => updateStockProduct(input.id, input)),
   }),
   chat: router({
     messages: protectedProcedure.input(z.object({ pageId: z.string().min(1), threadId: z.string().min(1) })).query(async ({ input }) => {
