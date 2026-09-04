@@ -21,7 +21,7 @@ import {
   createProductAlias,
   updateProductAlias,
 } from "./db";
-import { fetchLiveOrder, fetchLiveOrders, fetchLiveThreads, getLiveOrderStats } from "./supabase";
+import { fetchLiveOrder, fetchLiveOrders, fetchLiveProductMappings, fetchLiveThreads, getLiveOrderStats, syncProductAliasToMaster } from "./supabase";
 import { generateOrderSummary } from "./order-summary";
 import { verifyVaultAccessCode } from "./vault-access";
 import { sendMetaMessage } from "./meta";
@@ -110,8 +110,9 @@ export const appRouter = router({
   }),
   productAliases: router({
     list: adminProcedure.query(({ ctx }) => listProductAliases(ctx.user.id)),
-    create: adminProcedure.input(z.object({ alias: z.string().trim().min(1).max(180), canonicalSku: z.string().trim().min(1).max(120), canonicalLabel: z.string().trim().min(1).max(255) })).mutation(({ ctx, input }) => createProductAlias(ctx.user.id, input)),
-    update: adminProcedure.input(z.object({ id: z.number().int().positive(), alias: z.string().trim().min(1).max(180), canonicalSku: z.string().trim().min(1).max(120), canonicalLabel: z.string().trim().min(1).max(255), isActive: z.boolean() })).mutation(({ ctx, input }) => updateProductAlias(ctx.user.id, input.id, input)),
+    catalog: adminProcedure.query(() => fetchLiveProductMappings()),
+    create: adminProcedure.input(z.object({ alias: z.string().trim().min(1).max(180), canonicalSku: z.string().trim().min(1).max(120), canonicalLabel: z.string().trim().min(1).max(255) })).mutation(async ({ ctx, input }) => { const aliases = await createProductAlias(ctx.user.id, input); const sync = await syncProductAliasToMaster(input); return { aliases, sync }; }),
+    update: adminProcedure.input(z.object({ id: z.number().int().positive(), alias: z.string().trim().min(1).max(180), canonicalSku: z.string().trim().min(1).max(120), canonicalLabel: z.string().trim().min(1).max(255), isActive: z.boolean() })).mutation(async ({ ctx, input }) => { const aliases = await updateProductAlias(ctx.user.id, input.id, input); const sync = input.isActive ? await syncProductAliasToMaster(input) : { synced: false, sku: input.canonicalSku, aliasCount: 0 }; return { aliases, sync }; }),
   }),
   chat: router({
     messages: protectedProcedure.input(z.object({ pageId: z.string().min(1), threadId: z.string().min(1) })).query(({ input }) => listChatMessages(input.pageId, input.threadId)),

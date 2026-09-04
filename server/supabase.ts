@@ -10,6 +10,7 @@ export type LiveOrderItem = {
   display_for_packer?: string | null;
   telegram_final_mapped?: string | null;
   label_display?: string | null;
+  product_name?: string | null;
   quantity?: number | null;
   qty?: number | null;
   unit_price?: number | null;
@@ -48,6 +49,7 @@ export type LiveOrder = {
   cod_check_status: string | null;
   is_ready_to_pack: boolean;
   telegram_message: string | null;
+  telegram_copy_text: string | null;
   telegram_chat_id: string | null;
   source_text: string | null;
   raw_text_with_phone: string | null;
@@ -81,21 +83,29 @@ export type LiveThread = {
   chatTimeline: string[];
 };
 
+export type LiveProductMapping = {
+  sku: string;
+  label: string;
+  price: number | null;
+  emoji: string | null;
+  aliases?: string | null;
+};
+
 const orderSelect = [
   "id", "upsert_key", "order_number", "order_date", "order_time", "created_at", "updated_at",
   "customer_name", "facebook_name", "phone", "full_address", "address_display_packer",
   "page_name", "page_id", "thread_id", "threadId", "cod_amount", "expected_cod", "sku", "th_name", "emoji", "label_display",
   "display_for_packer", "telegram_status", "order_status", "audit_status", "audit_flags",
-  "cod_check_status", "is_ready_to_pack", "telegram_message", "telegram_chat_id", "clean_text", "single_cleaned_block", "telegram_body",
+  "cod_check_status", "is_ready_to_pack", "telegram_message", "telegram_copy_text", "telegram_chat_id", "clean_text", "single_cleaned_block", "telegram_body",
 ].join(",");
 
 const itemSelect = [
   "id", "upsert_key", "order_number", "order_date", "order_time", "created_at", "updated_at",
   "customer_name", "facebook_name", "phone", "full_address", "address_display_packer", "addressclean",
   "page_name", "page_id", "thread_id", "threadId", "sku", "th_name", "emoji", "label_display", "display_for_packer",
-  "telegram_final_mapped", "quantity", "qty", "unit_price", "expected_cod", "cod_amount", "telegram_status",
+  "telegram_final_mapped", "product_name", "quantity", "qty", "unit_price", "expected_cod", "cod_amount", "telegram_status",
   "order_status", "audit_status", "audit_flags", "cod_check_status", "is_ready_to_pack", "telegram_message",
-  "telegram_chat_id", "clean_text", "single_cleaned_block", "telegram_body",
+  "telegram_chat_id", "telegram_message", "telegram_copy_text", "clean_text", "single_cleaned_block", "telegram_body",
 ].join(",");
 
 function config() {
@@ -159,6 +169,7 @@ function normalizeItem(row: Record<string, unknown>): LiveOrderItem {
     display_for_packer: text(row.display_for_packer),
     telegram_final_mapped: text(row.telegram_final_mapped),
     label_display: text(row.label_display),
+    product_name: text(row.product_name),
     quantity: number(row.quantity),
     qty: number(row.qty),
     unit_price: number(row.unit_price),
@@ -200,12 +211,13 @@ function normalizeOrder(row: Record<string, unknown>, items: LiveOrderItem[]): L
     cod_check_status: text(row.cod_check_status),
     is_ready_to_pack: bool(row.is_ready_to_pack),
     telegram_message: text(row.telegram_message),
+    telegram_copy_text: text(row.telegram_copy_text),
     telegram_chat_id: text(row.telegram_chat_id),
     source_text: text(row.clean_text) ?? text(row.single_cleaned_block),
     raw_text_with_phone: text(row.raw_text_with_phone ?? bodyField(row, "raw_text_with_phone")),
     raw_text_with_phone_timed: text(row.raw_text_with_phone_timed ?? bodyField(row, "raw_text_with_phone_timed")),
     full_chunk_text: text(row.full_chunk_text ?? bodyField(row, "full_chunk_text")),
-    chat_timeline: timeline(row.chat_timeline ?? bodyField(row, "chat_timeline")),
+    chat_timeline: timeline(row.chat_timeline ?? bodyField(row, "chat_timeline") ?? row.raw_text_with_phone_timed ?? row.full_chunk_text ?? row.clean_text ?? row.telegram_copy_text ?? row.telegram_message),
     items,
   };
 }
@@ -279,6 +291,32 @@ export async function fetchLiveOrder(orderNumber: string) {
   return orders.find(order => order.order_number === orderNumber) ?? null;
 }
 
+export async function fetchLiveProductMappings(): Promise<LiveProductMapping[]> {
+  const rows = await getRows<Record<string, unknown>>("product_master", "sku,label_display,display_for_packer,name_standard,unit_price,emoji,alias", 1000);
+  return rows.map(row => ({
+    sku: String(row.sku ?? ""),
+    label: String(row.label_display ?? row.display_for_packer ?? row.name_standard ?? row.sku ?? ""),
+    price: number(row.unit_price),
+    emoji: text(row.emoji),
+    aliases: text(row.alias),
+  })).filter(item => item.sku && item.label).sort((a, b) => a.sku.localeCompare(b.sku));
+}
+
+export async function syncProductAliasToMaster(input: { alias: string; canonicalSku: string }) {
+  const { baseUrl, key } = config();
+  const filter = encodeURIComponent(input.canonicalSku);
+  const response = await fetch(`${baseUrl}/rest/v1/product_master?select=id,sku,alias&sku=eq.${filter}&limit=1`, { headers: { apikey: key, Authorization: `Bearer ${key}` } });
+  if (!response.ok) throw new Error(`Supabase product_master lookup returned HTTP ${response.status}`);
+  const rows = await response.json() as Array<{ id: number; sku: string; alias: string | null }>;
+  const row = rows[0];
+  if (!row) throw new Error(`ไม่พบ SKU ${input.canonicalSku} ใน product_master`);
+  const aliases = String(row.alias ?? "").split(/[,\n|]+/).map(value => value.trim()).filter(Boolean);
+  if (!aliases.some(value => value.toLowerCase() === input.alias.trim().toLowerCase())) aliases.push(input.alias.trim());
+  const update = await fetch(`${baseUrl}/rest/v1/product_master?id=eq.${row.id}`, { method: "PATCH", headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify({ alias: aliases.join(", ") }) });
+  if (!update.ok) throw new Error(`Supabase product_master update returned HTTP ${update.status}`);
+  return { synced: true, sku: row.sku, aliasCount: aliases.length };
+}
+
 export async function fetchLiveThreads(search?: string) {
   const orders = (await fetchLiveOrders(search)).filter(order => Boolean(order.page_id || order.page_name));
   const storedMessages = await listStoredChatMessages();
@@ -286,7 +324,7 @@ export async function fetchLiveThreads(search?: string) {
   for (const order of orders) {
     const key = `${order.page_id ?? order.page_name ?? "unknown"}::${order.thread_id ?? order.threadId ?? order.customer_name ?? order.order_number}`;
     const existing = groups.get(key);
-    const itemPreview = order.items.map(item => item.display_for_packer || item.th_name || item.sku).filter(Boolean).join(", ");
+    const itemPreview = order.items.map(item => item.label_display || item.telegram_final_mapped || item.display_for_packer || item.th_name || item.sku).filter(Boolean).join(", ");
     const thread: LiveThread = existing ?? {
       key,
       pageName: order.page_name ?? order.page_id ?? "เพจไม่ทราบ",
