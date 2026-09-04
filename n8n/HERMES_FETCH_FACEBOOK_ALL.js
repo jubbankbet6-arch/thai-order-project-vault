@@ -1,12 +1,11 @@
 // n8n Code node: 🌌 HERMES_FETCH_FACEBOOK_ALL
 // Mode: Run Once for All Items
 // Reads page_id/access_token from 🔮BB_EMPIRE_DATABASE; never returns access_token.
-// Uses bounded parallel requests so 7 pages do not wait one-by-one.
+// Sequential fetching is intentional: stable for the current 7-page workload (~1m12s).
 
 const configItems = $("🔮BB_EMPIRE_DATABASE").all();
 const now = new Date();
 const since = new Date(now.getTime() - 5 * 60 * 60 * 1000);
-const PAGE_CONCURRENCY = 4;
 const fields = "id,updated_time,message_count,unread_count,participants,can_reply,messages.limit(30){id,message,created_time,from{id,name},is_echo,attachments{mime_type,name,file_url,url},shares{name,link},sticker}";
 
 function errorText(error) {
@@ -32,7 +31,8 @@ const pages = configItems
 
 if (!pages.length) throw new Error("ไม่พบเพจที่มี page_id, Token และสถานะ ON จาก 🔮BB_EMPIRE_DATABASE");
 
-async function fetchPage(page) {
+const output = [];
+for (const page of pages) {
   try {
     const response = await this.helpers.httpRequest({
       method: "GET",
@@ -46,7 +46,7 @@ async function fetchPage(page) {
       },
       json: true,
     });
-    return {
+    output.push({
       json: {
         page_index: page.page_index,
         page_id: page.page_id,
@@ -58,9 +58,9 @@ async function fetchPage(page) {
         fetch_status: "success",
         facebook_response: response,
       },
-    };
+    });
   } catch (error) {
-    return {
+    output.push({
       json: {
         page_index: page.page_index,
         page_id: page.page_id,
@@ -71,15 +71,8 @@ async function fetchPage(page) {
         fetch_error: errorText(error),
         facebook_response: { data: [] },
       },
-    };
+    });
   }
-}
-
-const output = [];
-for (let start = 0; start < pages.length; start += PAGE_CONCURRENCY) {
-  const batch = pages.slice(start, start + PAGE_CONCURRENCY);
-  const results = await Promise.all(batch.map(page => fetchPage.call(this, page)));
-  output.push(...results);
 }
 
 return output;
