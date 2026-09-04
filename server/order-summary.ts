@@ -29,16 +29,7 @@ function firstMatch(text: string, patterns: RegExp[]) {
 }
 
 function thaiOrderNumber(now = new Date()) {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Bangkok",
-    day: "2-digit",
-    month: "2-digit",
-    year: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(now);
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Bangkok", day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).formatToParts(now);
   const get = (type: string) => parts.find(part => part.type === type)?.value ?? "00";
   return `ORD-${get("day")}${get("month")}${get("year")}-${get("hour")}${get("minute")}${get("second")}`;
 }
@@ -52,13 +43,30 @@ function parseAddress(lines: string[]) {
   }).join(" ").replace(/\s+/g, " ").trim();
 }
 
+const productAliases = [
+  { pattern: /(?:เซียร่า|ซีวอส|se[vw]ios)\s*เขียว|se[vw]ios[_ -]?green/i, label: "🟩 SEVIOS_GREEN(ซีวอสเขียว)" },
+  { pattern: /เซียร่า\s*แดง|ซีวอส\s*แดง|se[vw]ios[_ -]?red/i, label: "🟥 SEVIOS_RED(ซีวอสแดง)" },
+  { pattern: /มอนด์\s*เขียว|mond[_ -]?green/i, label: "🟩 MOND_GREEN(มอนด์เขียว)" },
+  { pattern: /มะม่วง/i, label: "🥭 OS_MANGO(มะม่วง)" },
+  { pattern: /เมนทอล|menthol/i, label: "🟦 MILANO_MENTHOL(มิลานเมนทอล)" },
+  { pattern: /วีส\s*เขียว|vess[_ -]?green/i, label: "🟩 VESS_GREEN(วีสเขียว)" },
+];
+
+function normalizeProduct(value: string) {
+  const quantity = value.match(/(\d+(?:\.\d+)?)\s*(?:คอค|คอต|คอตตอน|กล่อง|ชิ้น)?\s*$/i)?.[1];
+  const match = productAliases.find(alias => alias.pattern.test(value));
+  if (!match) return value;
+  return `${match.label}${quantity ? ` ${quantity} คอต` : ""}`;
+}
+
 export function generateOrderSummary(input: OrderSummaryInput, now = new Date()): OrderSummary {
   const rawText = clean(input.rawText);
   const lines = rawText.split(/\r?\n/).map(clean).filter(Boolean);
   const phone = firstMatch(rawText, [/(0\d{8,9})/, /(?:โทร|เบอร์|phone|tel)\s*[:：]?\s*([0-9 -]{9,13})/i]).replace(/[ -]/g, "");
   const customerName = clean(input.customerName) || firstMatch(rawText, [/(?:ชื่อ|ลูกค้า|ผู้รับ|customer)\s*[:：-]\s*([^\n]+)/i]) || lines.find(line => /[ก-๙]{2,}/.test(line) && !/(ตำบล|ต\.|อำเภอ|อ\.|จังหวัด|จ\.|ถนน|หมู่|แขวง|เขต|บ้านเลขที่)/.test(line) && !/\d{5}/.test(line)) || "ไม่ระบุชื่อ";
   const cod = clean(input.cod) || firstMatch(rawText, [/(?:COD|เก็บปลายทาง|ยอด(?:รวม)?|ราคา)\s*[:：]?\s*([\d,]+(?:\.\d+)?)\s*(?:บาท|฿)?/i]) || "ไม่ระบุ";
-  const product = clean(input.product) || firstMatch(rawText, [/(?:สินค้า|product|sku)\s*[:：-]\s*([^\n]+)/i]) || lines.find(line => /(?:คอต|คอตตอน|กล่อง|ชิ้น|SKU|MOND|CAVALLO|MILANO|SEVIOS|MANGO|GREEN|RED|BLUE|PURPLE)/i.test(line)) || "ไม่ระบุสินค้า";
+  const rawProduct = clean(input.product) || firstMatch(rawText, [/(?:สินค้า|product|sku)\s*[:：-]\s*([^\n]+)/i]) || lines.find(line => /(?:คอต|คอตตอน|กล่อง|ชิ้น|SKU|MOND|CAVALLO|MILANO|SEVIOS|MANGO|GREEN|RED|BLUE|PURPLE|เซียร่า|ซีวอส|มอนด์)/i.test(line)) || "ไม่ระบุสินค้า";
+  const product = normalizeProduct(rawProduct);
   const address = parseAddress(lines.filter(line => line !== customerName && !line.replace(/[ -]/g, "").includes(phone)));
   const orderNumber = clean(input.orderNumber) || thaiOrderNumber(now);
   const copyText = [orderNumber, customerName, phone || "ไม่ระบุเบอร์โทร", address || "ไม่ระบุที่อยู่", product, cod === "ไม่ระบุ" ? cod : `${cod} บาท`].join("\n");

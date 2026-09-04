@@ -29,4 +29,13 @@ describe("generateOrderSummary", () => {
     expect(result.cod).toBe("450");
     expect(result.copyText).toContain("450 บาท");
   });
+
+  it("maps Thai product aliases to the standard label used by the mapping workflow", () => {
+    const result = generateOrderSummary({
+      rawText: "ชื่อ Hz บ้านเลขที่ 58 ถนนลงหาดบางแสน ต.แสนสุข อ.เมือง จ.ชลบุรี 20130 เบอร์ 0930002488✅ เซียร่าเขียว 1",
+    }, new Date("2026-09-04T08:32:14.000Z"));
+
+    expect(result.product).toBe("🟩 SEVIOS_GREEN(ซีวอสเขียว) 1 คอต");
+    expect(result.copyText).toContain("🟩 SEVIOS_GREEN(ซีวอสเขียว) 1 คอต");
+  });
 });
