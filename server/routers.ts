@@ -21,7 +21,7 @@ import {
   createProductAlias,
   updateProductAlias,
 } from "./db";
-import { fetchLiveOrder, fetchLiveOrders, fetchLiveProductMappings, fetchLiveThreads, getLiveOrderStats, syncProductAliasToMaster } from "./supabase";
+import { fetchExternalChatMessages, fetchLiveOrder, fetchLiveOrders, fetchLiveProductMappings, fetchLiveThreads, getLiveOrderStats, syncProductAliasToMaster } from "./supabase";
 import { generateOrderSummary } from "./order-summary";
 import { verifyVaultAccessCode } from "./vault-access";
 import { sendMetaMessage } from "./meta";
@@ -115,7 +115,14 @@ export const appRouter = router({
     update: adminProcedure.input(z.object({ id: z.number().int().positive(), alias: z.string().trim().min(1).max(180), canonicalSku: z.string().trim().min(1).max(120), canonicalLabel: z.string().trim().min(1).max(255), isActive: z.boolean() })).mutation(async ({ ctx, input }) => { const aliases = await updateProductAlias(ctx.user.id, input.id, input); const sync = input.isActive ? await syncProductAliasToMaster(input) : { synced: false, sku: input.canonicalSku, aliasCount: 0 }; return { aliases, sync }; }),
   }),
   chat: router({
-    messages: protectedProcedure.input(z.object({ pageId: z.string().min(1), threadId: z.string().min(1) })).query(({ input }) => listChatMessages(input.pageId, input.threadId)),
+    messages: protectedProcedure.input(z.object({ pageId: z.string().min(1), threadId: z.string().min(1) })).query(async ({ input }) => {
+      const [local, external] = await Promise.all([listChatMessages(input.pageId, input.threadId), fetchExternalChatMessages(input.pageId, input.threadId)]);
+      return [...local, ...external].sort((a, b) => {
+        const aTime = a.occurredAt instanceof Date ? a.occurredAt.getTime() : Date.parse(String(a.occurredAt ?? ""));
+        const bTime = b.occurredAt instanceof Date ? b.occurredAt.getTime() : Date.parse(String(b.occurredAt ?? ""));
+        return bTime - aTime;
+      });
+    }),
     sendReply: adminProcedure.input(z.object({ pageId: z.string().min(1), threadId: z.string().min(1), recipientId: z.string().min(1), text: z.string().max(4_000).optional(), imageUrl: z.string().url().optional() })).mutation(async ({ ctx, input }) => {
       const result = await sendMetaMessage(input);
       await saveChatMessage({ providerMessageId: result.message_id, pageId: input.pageId, threadId: input.threadId, senderId: input.pageId, senderType: "admin", direction: "outbound", text: input.text, attachments: input.imageUrl ? [{ type: "image", url: input.imageUrl }] : undefined, adminUserId: ctx.user.id });

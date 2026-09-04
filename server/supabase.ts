@@ -92,6 +92,22 @@ export type LiveProductMapping = {
   aliases?: string | null;
 };
 
+export type ExternalChatMessage = {
+  id: number;
+  providerMessageId: string | null;
+  pageId: string;
+  pageName: string | null;
+  threadId: string;
+  senderId: string;
+  senderType: "customer" | "page";
+  direction: "inbound" | "outbound";
+  text: string | null;
+  attachmentsJson: string | null;
+  adminUserId?: number | null;
+  occurredAt: string | null;
+  createdAt: string | null;
+};
+
 const orderSelect = [
   "id", "upsert_key", "order_number", "order_date", "order_time", "created_at", "updated_at",
   "customer_name", "facebook_name", "phone", "full_address", "address_display_packer",
@@ -303,6 +319,39 @@ export async function fetchLiveProductMappings(): Promise<LiveProductMapping[]> 
   })).filter(item => item.sku && item.label).sort((a, b) => a.sku.localeCompare(b.sku));
 }
 
+function jsonText(value: unknown) {
+  if (value === null || value === undefined) return null;
+  return typeof value === "string" ? value : JSON.stringify(value);
+}
+
+export async function fetchExternalChatMessages(pageId?: string, threadId?: string, limit = 2000): Promise<ExternalChatMessage[]> {
+  const { baseUrl, key } = config();
+  const select = "id,source_message_id,page_id,page_name,conversation_key,customer_id,page_sender_id,message_text,attachments_json,occurred_at,synced_at";
+  async function readTable(table: string) {
+    const params = new URLSearchParams({ select, order: "occurred_at.desc", limit: String(limit) });
+    if (pageId) params.set("page_id", `eq.${pageId}`);
+    if (threadId) params.set("conversation_key", `eq.${threadId}`);
+    const response = await fetch(`${baseUrl}/rest/v1/${table}?${params}`, { headers: { apikey: key, Authorization: `Bearer ${key}` } });
+    if (!response.ok) throw new Error(`Supabase ${table} returned HTTP ${response.status}`);
+    return response.json() as Promise<Array<Record<string, unknown>>>;
+  }
+  try {
+    const [customers, pages] = await Promise.all([readTable("chat_customer_messages"), readTable("chat_page_messages")]);
+    const rows: Array<Record<string, unknown> & { senderId: unknown; senderType: "customer" | "page"; direction: "inbound" | "outbound" }> = [
+      ...customers.map(row => ({ ...row, senderId: row.customer_id, senderType: "customer" as const, direction: "inbound" as const })),
+      ...pages.map(row => ({ ...row, senderId: row.page_sender_id ?? row.page_id, senderType: "page" as const, direction: "outbound" as const })),
+    ];
+    return rows.map((row, index) => ({
+      id: Number(row.id ?? index + 1), providerMessageId: text(row.source_message_id), pageId: String(row.page_id ?? ""), pageName: text(row.page_name),
+      threadId: String(row.conversation_key ?? ""), senderId: String(row.senderId ?? ""), senderType: row.senderType, direction: row.direction,
+      text: text(row.message_text), attachmentsJson: jsonText(row.attachments_json), occurredAt: text(row.occurred_at), createdAt: text(row.synced_at),
+    })).sort((a, b) => (Date.parse(String(b.occurredAt ?? "")) || 0) - (Date.parse(String(a.occurredAt ?? "")) || 0));
+  } catch (error) {
+    if (/404|42P01|relation|does not exist/i.test(String(error))) return [];
+    throw error;
+  }
+}
+
 export async function syncProductAliasToMaster(input: { alias: string; canonicalSku: string }) {
   const { baseUrl, key } = config();
   const filter = encodeURIComponent(input.canonicalSku);
@@ -320,7 +369,11 @@ export async function syncProductAliasToMaster(input: { alias: string; canonical
 
 export async function fetchLiveThreads(search?: string) {
   const orders = (await fetchLiveOrders(search)).filter(order => Boolean(order.page_id || order.page_name));
-  const storedMessages = await listStoredChatMessages();
+  const [storedMessages, externalMessages] = await Promise.all([listStoredChatMessages(), fetchExternalChatMessages()]);
+  const allMessages = [
+    ...storedMessages.map(message => ({ pageId: message.pageId, pageName: message.pageName, threadId: message.threadId, occurredAt: message.occurredAt, direction: message.direction, text: message.text })),
+    ...externalMessages,
+  ];
   const groups = new Map<string, LiveThread>();
   for (const order of orders) {
     const key = `${order.page_id ?? order.page_name ?? "unknown"}::${order.thread_id ?? order.threadId ?? order.customer_name ?? order.order_number}`;
@@ -358,9 +411,9 @@ export async function fetchLiveThreads(search?: string) {
     }
     groups.set(key, thread);
   }
-  for (const message of storedMessages) {
+  for (const message of allMessages) {
     const key = `${message.pageId}::${message.threadId}`;
-    const messageAt = message.occurredAt?.toISOString?.() ?? String(message.occurredAt ?? "");
+    const messageAt = message.occurredAt instanceof Date ? message.occurredAt.toISOString() : String(message.occurredAt ?? "");
     const existing = groups.get(key);
     const thread: LiveThread = existing ?? {
       key,
