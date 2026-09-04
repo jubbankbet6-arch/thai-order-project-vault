@@ -4,18 +4,10 @@
 // Output: one normalized message item per Meta message for the two processors.
 // No API calls and no page-name guessing happen here.
 
-// Authoritative page registry. Match by exact page_id only; never infer a
-// page from a name, email, ID length, or participant position.
-const MASTERCONFIG = [
-  { page_index: "BB_01", page_id: "103411062505149", page_name: "🎀BBεїзเบอร์หนึ่งสโตร์", system_status: "ON", assigned_agent: "#ไนท์รา", assigned_hashtag: "🔮#BB_ORDER_01" },
-  { page_index: "BB_02", page_id: "113923148350742", page_name: "🎶BB ↠ STORE", system_status: "ON", assigned_agent: "#Venika", assigned_hashtag: "🔮#BB_ORDER_02" },
-  { page_index: "BB_03", page_id: "111414924711459", page_name: "🍇BBสโตร์.", system_status: "ON", assigned_agent: "#Mali", assigned_hashtag: "🔮#BB_ORDER_03" },
-  { page_index: "BB_04", page_id: "1047257891810878", page_name: "💗Bb store๐", system_status: "ON", assigned_agent: "#🍉TANGMO", assigned_hashtag: "🔮#BB_ORDER_04" },
-  { page_index: "BB_05", page_id: "1064404466767377", page_name: "เจ๊บี 🅱🅱", system_status: "ON", assigned_agent: "#👑เจ๊บี", assigned_hashtag: "🔮#BB_ORDER_05" },
-  { page_index: "BB_06", page_id: "1235719106287717", page_name: "🛒ร้าน:เจ๊บี", system_status: "ON", assigned_agent: "#🍀ใบบัว", assigned_hashtag: "🔮#BB_ORDER_06" },
-  { page_index: "BB_07", page_id: "1032290633303246", page_name: "💬ร้าน:เจ๊ B", system_status: "ON", assigned_agent: "💬#", assigned_hashtag: "🔮#BB_ORDER_07" },
-];
-const PAGE_BY_ID = new Map(MASTERCONFIG.map(page => [String(page.page_id), page]));
+// Page registry is built dynamically from the current n8n input items.
+// Match page_id exactly; never infer from names, email, length, or position.
+let MASTERCONFIG = [];
+let PAGE_BY_ID = new Map();
 
 const output = [];
 const seen = new Set();
@@ -133,7 +125,28 @@ function findMessages(value, context = {}) {
   }
 }
 
-for (const item of $input.all()) {
+const inputItems = $input.all();
+
+// Accept either one config object per item or a single item containing an array.
+for (const item of inputItems) {
+  const value = item.json ?? {};
+  const candidates = Array.isArray(value) ? value : Array.isArray(value.data) && !value.facebook_response ? value.data : [value];
+  for (const candidate of candidates) {
+    const pageId = String(candidate?.page_id ?? candidate?.pageId ?? "");
+    if (!pageId || !candidate || typeof candidate !== "object") continue;
+    if (!MASTERCONFIG.some(page => String(page.page_id) === pageId)) MASTERCONFIG.push({
+      page_index: candidate.page_index ?? candidate.row_number ?? null,
+      page_id: pageId,
+      page_name: candidate.page_name ?? candidate.pageName ?? null,
+      system_status: String(candidate.system_status ?? candidate.status ?? "ON").toUpperCase(),
+      assigned_agent: candidate.assigned_agent ?? candidate.admin_name ?? null,
+      assigned_hashtag: candidate.assigned_hashtag ?? candidate.assigned_Hashtag ?? null,
+    });
+  }
+}
+PAGE_BY_ID = new Map(MASTERCONFIG.map(page => [String(page.page_id), page]));
+
+for (const item of inputItems) {
   const source = item.json ?? {};
   const graph = source.facebook_response ?? source.body ?? source;
   findMessages(graph, {
