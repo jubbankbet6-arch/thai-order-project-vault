@@ -156,9 +156,19 @@ export const appRouter = router({
         await createAuditLog({ actorUserId: ctx.user.id, actorName: ctx.user.name, action: "message_sent", entityType: "chat_message", entityId: result.message_id, pageId: input.pageId, threadId: input.threadId, metadata: { hasText: Boolean(input.text), hasImage: Boolean(input.imageUrl), hasSticker: Boolean(input.stickerId), deliveryStatus: "sent" } });
         return { ok: true, status: "sent" as const, messageId: result.message_id };
       } catch (error) {
-        await createAuditLog({ actorUserId: ctx.user.id, actorName: ctx.user.name, action: "message_send_failed", entityType: "chat_message", pageId: input.pageId, threadId: input.threadId, metadata: { hasText: Boolean(input.text), hasImage: Boolean(input.imageUrl), hasSticker: Boolean(input.stickerId), deliveryStatus: "failed", error: String(error instanceof Error ? error.message : error).slice(0, 500) } });
+        const errorText = String(error instanceof Error ? error.message : error);
+        const trace = errorText.match(/trace=([^,)]+)/i)?.[1] ?? null;
+        const code = errorText.match(/code=(-?\d+)/i)?.[1] ?? null;
+        const subcode = errorText.match(/subcode=(-?\d+)/i)?.[1] ?? null;
+        const safePayload = { recipient: { id: input.recipientId }, messaging_type: "RESPONSE", message: input.text?.trim() ? { text: input.text.trim() } : input.imageUrl ? { attachment: { type: "image", payload: { url: input.imageUrl, is_reusable: false } } } : input.stickerId ? { sticker_id: input.stickerId } : {} };
+        await createAuditLog({ actorUserId: ctx.user.id, actorName: ctx.user.name, action: "meta_send_error", entityType: "meta_message", pageId: input.pageId, threadId: input.threadId, metadata: { httpStatus: null, metaCode: code ? Number(code) : null, metaSubcode: subcode ? Number(subcode) : null, fbtraceId: trace, payload: safePayload, error: errorText.slice(0, 1000) } });
+        await createAuditLog({ actorUserId: ctx.user.id, actorName: ctx.user.name, action: "message_send_failed", entityType: "chat_message", pageId: input.pageId, threadId: input.threadId, metadata: { hasText: Boolean(input.text), hasImage: Boolean(input.imageUrl), hasSticker: Boolean(input.stickerId), deliveryStatus: "failed", error: errorText.slice(0, 500) } });
         throw error;
       }
+    }),
+    simulateSend: adminProcedure.input(z.object({ pageId: z.string().min(1), threadId: z.string().min(1), recipientId: z.string().min(1), kind: z.enum(["text", "image"]), text: z.string().max(4_000).optional(), imageUrl: z.string().url().optional() })).mutation(({ input }) => {
+      const message = input.kind === "text" ? { text: input.text?.trim() || "ข้อความทดสอบ NIGHTOPS" } : { attachment: { type: "image", payload: { url: input.imageUrl || "https://example.com/test-image.jpg", is_reusable: false } } };
+      return { dryRun: true, payload: { recipient: { id: input.recipientId }, messaging_type: "RESPONSE", message }, note: "จำลอง Payload เท่านั้น ยังไม่ได้เรียก Meta API และไม่มีข้อความถูกส่ง" };
     }),
     uploadImage: adminProcedure.input(z.object({ fileName: z.string().min(1).max(512), contentType: z.string().regex(/^image\/(jpeg|png|gif|webp)$/i), base64: z.string().min(1).max(8_000_000) })).mutation(async ({ ctx, input }) => {
       const bytes = Buffer.from(input.base64.replace(/^data:[^;]+;base64,/, ""), "base64");
@@ -175,6 +185,7 @@ export const appRouter = router({
       const sent = logs.filter(log => log.action === "message_sent");
       return { failed, sent, checkedAt: new Date().toISOString() };
     }),
+    metaErrors: adminProcedure.query(async () => (await listAuditLogs(200, "meta_send_error")).map(log => ({ id: log.id, pageId: log.pageId, threadId: log.threadId, createdAt: log.createdAt, metadata: log.metadataJson ? JSON.parse(log.metadataJson) : {} }))),
     audit: adminProcedure.query(() => listAuditLogs()),
   }),
 });
