@@ -326,8 +326,10 @@ function jsonText(value: unknown) {
 
 export async function fetchExternalChatMessages(pageId?: string, threadId?: string, limit = 2000): Promise<ExternalChatMessage[]> {
   const { baseUrl, key } = config();
-  const select = "id,source_message_id,page_id,page_name,conversation_key,customer_id,page_sender_id,message_text,attachments_json,occurred_at,synced_at";
   async function readTable(table: string) {
+    const select = table === "chat_customer_messages"
+      ? "id,source_message_id,page_id,page_name,conversation_key,customer_id,message_text,attachments_json,occurred_at,synced_at"
+      : "id,source_message_id,page_id,page_name,conversation_key,page_sender_id,message_text,attachments_json,occurred_at,synced_at";
     const params = new URLSearchParams({ select, order: "occurred_at.desc", limit: String(limit) });
     if (pageId) params.set("page_id", `eq.${pageId}`);
     if (threadId) params.set("conversation_key", `eq.${threadId}`);
