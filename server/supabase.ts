@@ -479,6 +479,23 @@ export async function fetchExternalChatMessages(pageId?: string, threadId?: stri
   }
 }
 
+export async function fetchCustomerChatEvidence(pageId: string, threadId: string, limit = 500) {
+  const { baseUrl, key } = config();
+  const params = new URLSearchParams({
+    select: "id,source_message_id,dedupe_key,page_id,page_name,conversation_key,customer_id,customer_name,sender_id,sender_name,message_text,message_type,attachments_json,image_urls,has_image,attachment_count,occurred_at,source_created_at,first_seen_at,last_seen_at,raw_payload",
+    page_id: `eq.${pageId}`,
+    conversation_key: `eq.${threadId}`,
+    order: "occurred_at.asc",
+    limit: String(limit),
+  });
+  const response = await fetch(`${baseUrl}/rest/v1/chat_customer_evidence?${params}`, { headers: { apikey: key, Authorization: `Bearer ${key}` } });
+  if (!response.ok) {
+    if (response.status === 404 || response.status === 42) return [];
+    throw new Error(`Supabase chat_customer_evidence returned HTTP ${response.status}`);
+  }
+  return response.json() as Promise<Array<Record<string, unknown>>>;
+}
+
 export async function syncProductAliasToMaster(input: { alias: string; canonicalSku: string }) {
   const { baseUrl, key } = config();
   const filter = encodeURIComponent(input.canonicalSku);

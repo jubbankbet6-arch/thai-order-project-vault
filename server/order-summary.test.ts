@@ -60,4 +60,15 @@ describe("generateOrderSummary", () => {
 
     expect(result.product).toBe("🟩 CUSTOM_GREEN(เขียวพิเศษ) 2 คอต");
   });
+
+  it("keeps multiple products and quantities as separate summary lines", () => {
+    const result = generateOrderSummary({
+      rawText: "ชื่อ: ลูกค้าหลายชิ้น\nโทร: 0812345678\nที่อยู่: 99/1 กรุงเทพฯ 10110\nสินค้า: MOND_GREEN 2 คอต, SEVIOS_RED 1 คอต\nCOD: 850",
+    });
+
+    expect(result.product).toContain("🟩 MOND_GREEN(มอนด์เขียว) 2 คอต");
+    expect(result.product).toContain("🟥 SEVIOS_RED(ซีวอสแดง) 1 คอต");
+    expect(result.product.split("\n")).toHaveLength(2);
+    expect(result.copyText).toContain("🟩 MOND_GREEN(มอนด์เขียว) 2 คอต\n🟥 SEVIOS_RED(ซีวอสแดง) 1 คอต");
+  });
 });

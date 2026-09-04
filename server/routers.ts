@@ -21,7 +21,7 @@ import {
   createProductAlias,
   updateProductAlias,
 } from "./db";
-import { fetchExternalChatMessages, fetchLiveOrder, fetchLiveOrders, fetchOrdersForThread, fetchLiveProductMappings, fetchLiveThreads, fetchStockProducts, getLiveOrderStats, syncProductAliasToMaster, updateProductMapAlias, updateStockProduct } from "./supabase";
+import { fetchCustomerChatEvidence, fetchExternalChatMessages, fetchLiveOrder, fetchLiveOrders, fetchOrdersForThread, fetchLiveProductMappings, fetchLiveThreads, fetchStockProducts, getLiveOrderStats, syncProductAliasToMaster, updateProductMapAlias, updateStockProduct } from "./supabase";
 import { generateOrderSummary } from "./order-summary";
 import { verifyVaultAccessCode } from "./vault-access";
 import { sendMetaMessage } from "./meta";
@@ -127,6 +127,7 @@ export const appRouter = router({
     }),
     liveDetail: protectedProcedure.input(z.object({ orderNumber: z.string().trim().min(1) })).query(({ input }) => fetchLiveOrder(input.orderNumber)),
     forThread: protectedProcedure.input(z.object({ pageId: z.string().min(1), threadId: z.string().min(1) })).query(({ input }) => fetchOrdersForThread(input.pageId, input.threadId)),
+    chatEvidence: protectedProcedure.input(z.object({ pageId: z.string().min(1), threadId: z.string().min(1) })).query(({ input }) => fetchCustomerChatEvidence(input.pageId, input.threadId)),
     threads: protectedProcedure.input(z.object({ search: z.string().optional() }).optional()).query(({ input }) => fetchLiveThreads(input?.search)),
   }),
   productAliases: router({
