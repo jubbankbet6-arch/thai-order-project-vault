@@ -135,6 +135,25 @@ export const auditLogs = mysqlTable(
   }),
 );
 
+/** Admin-maintained Thai product aliases mapped to canonical SKU labels. */
+export const productAliases = mysqlTable(
+  "product_aliases",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    ownerId: int("ownerId").notNull(),
+    alias: varchar("alias", { length: 180 }).notNull(),
+    canonicalSku: varchar("canonicalSku", { length: 120 }).notNull(),
+    canonicalLabel: varchar("canonicalLabel", { length: 255 }).notNull(),
+    isActive: boolean("isActive").default(true).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  table => ({
+    ownerAliasUnique: uniqueIndex("product_aliases_owner_alias_unique").on(table.ownerId, table.alias),
+    ownerIdx: index("product_aliases_owner_idx").on(table.ownerId, table.updatedAt),
+  }),
+);
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type VaultProject = typeof vaultProjects.$inferSelect;
@@ -142,3 +161,4 @@ export type VaultFile = typeof vaultFiles.$inferSelect;
 export type VaultRevision = typeof vaultRevisions.$inferSelect;
 export type ChatMessage = typeof chatMessages.$inferSelect;
 export type AuditLog = typeof auditLogs.$inferSelect;
+export type ProductAlias = typeof productAliases.$inferSelect;

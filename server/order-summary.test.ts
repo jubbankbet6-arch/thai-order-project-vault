@@ -51,4 +51,13 @@ describe("generateOrderSummary", () => {
     expect(result.product).toBe("🟥 SEVIOS_RED(ซีวอสแดง) 1 คอต");
     expect(result.cod).toBe("200");
   });
+
+  it("uses an active admin alias before the fallback dictionary", () => {
+    const result = generateOrderSummary({
+      rawText: "ชื่อ ทดสอบ 0812345678 สินค้า เขียวพิเศษ 2",
+      productAliases: [{ alias: "เขียวพิเศษ", canonicalLabel: "🟩 CUSTOM_GREEN(เขียวพิเศษ)", isActive: true }],
+    });
+
+    expect(result.product).toBe("🟩 CUSTOM_GREEN(เขียวพิเศษ) 2 คอต");
+  });
 });

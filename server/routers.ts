@@ -17,6 +17,9 @@ import {
   listAuditLogs,
   listChatMessages,
   saveChatMessage,
+  listProductAliases,
+  createProductAlias,
+  updateProductAlias,
 } from "./db";
 import { fetchLiveOrder, fetchLiveOrders, fetchLiveThreads, getLiveOrderStats } from "./supabase";
 import { generateOrderSummary } from "./order-summary";
@@ -85,13 +88,30 @@ export const appRouter = router({
     }),
   }),
   orders: router({
-    generateSummary: adminProcedure.input(z.object({ rawText: z.string().max(20_000), customerName: z.string().max(180).optional(), product: z.string().max(500).optional(), cod: z.string().max(40).optional() })).mutation(async ({ ctx, input }) => { const summary = generateOrderSummary(input); await createAuditLog({ actorUserId: ctx.user.id, actorName: ctx.user.name, action: "order_summary_created", entityType: "order_draft", entityId: summary.orderNumber, metadata: { hasCustomer: summary.customerName !== "ไม่ระบุชื่อ", hasPhone: Boolean(summary.phone), hasAddress: Boolean(summary.address), hasProduct: summary.product !== "ไม่ระบุสินค้า", hasCod: summary.cod !== "ไม่ระบุ" } }); return summary; }),
+    generateSummary: adminProcedure.input(z.object({ rawText: z.string().max(20_000), customerName: z.string().max(180).optional(), product: z.string().max(500).optional(), cod: z.string().max(40).optional(), pageId: z.string().optional(), threadId: z.string().optional() })).mutation(async ({ ctx, input }) => {
+      const aliases = await listProductAliases(ctx.user.id);
+      let mappedProduct = input.product;
+      if (!mappedProduct && input.pageId && input.threadId) {
+        const thread = (await fetchLiveThreads()).find(item => item.pageId === input.pageId && item.threadId === input.threadId);
+        const order = thread?.orders[0];
+        const item = order?.items[0];
+        mappedProduct = item?.label_display ?? item?.telegram_final_mapped ?? order?.label_display ?? undefined;
+      }
+      const summary = generateOrderSummary({ ...input, product: mappedProduct, productAliases: aliases });
+      await createAuditLog({ actorUserId: ctx.user.id, actorName: ctx.user.name, action: "order_summary_created", entityType: "order_draft", entityId: summary.orderNumber, metadata: { hasCustomer: summary.customerName !== "ไม่ระบุชื่อ", hasPhone: Boolean(summary.phone), hasAddress: Boolean(summary.address), hasProduct: summary.product !== "ไม่ระบุสินค้า", hasCod: summary.cod !== "ไม่ระบุ" } });
+      return summary;
+    }),
     live: protectedProcedure.input(z.object({ search: z.string().optional() }).optional()).query(async ({ input }) => {
       const orders = await fetchLiveOrders(input?.search);
       return { orders, stats: getLiveOrderStats(orders), source: ["bb_order", "bb_order_items_fix"] as const, fetchedAt: new Date().toISOString() };
     }),
     liveDetail: protectedProcedure.input(z.object({ orderNumber: z.string().trim().min(1) })).query(({ input }) => fetchLiveOrder(input.orderNumber)),
     threads: protectedProcedure.input(z.object({ search: z.string().optional() }).optional()).query(({ input }) => fetchLiveThreads(input?.search)),
+  }),
+  productAliases: router({
+    list: adminProcedure.query(({ ctx }) => listProductAliases(ctx.user.id)),
+    create: adminProcedure.input(z.object({ alias: z.string().trim().min(1).max(180), canonicalSku: z.string().trim().min(1).max(120), canonicalLabel: z.string().trim().min(1).max(255) })).mutation(({ ctx, input }) => createProductAlias(ctx.user.id, input)),
+    update: adminProcedure.input(z.object({ id: z.number().int().positive(), alias: z.string().trim().min(1).max(180), canonicalSku: z.string().trim().min(1).max(120), canonicalLabel: z.string().trim().min(1).max(255), isActive: z.boolean() })).mutation(({ ctx, input }) => updateProductAlias(ctx.user.id, input.id, input)),
   }),
   chat: router({
     messages: protectedProcedure.input(z.object({ pageId: z.string().min(1), threadId: z.string().min(1) })).query(({ input }) => listChatMessages(input.pageId, input.threadId)),

@@ -4,6 +4,7 @@ export type OrderSummaryInput = {
   product?: string;
   cod?: string;
   orderNumber?: string;
+  productAliases?: Array<{ alias: string; canonicalLabel: string; isActive?: boolean }>;
 };
 
 export type OrderSummary = {
@@ -52,8 +53,10 @@ const productAliases = [
   { pattern: /วีส\s*เขียว|vess[_ -]?green/i, label: "🟩 VESS_GREEN(วีสเขียว)" },
 ];
 
-function normalizeProduct(value: string) {
+function normalizeProduct(value: string, customAliases: OrderSummaryInput["productAliases"] = []) {
   const quantity = value.match(/(\d+(?:\.\d+)?)\s*(?:คอค|คอต|คอตตอน|กล่อง|ชิ้น)?\s*$/i)?.[1];
+  const custom = customAliases.find(alias => alias.isActive !== false && value.toLowerCase().includes(alias.alias.toLowerCase()));
+  if (custom) return `${custom.canonicalLabel}${quantity ? ` ${quantity} คอต` : ""}`;
   const match = productAliases.find(alias => alias.pattern.test(value));
   if (!match) return value;
   return `${match.label}${quantity ? ` ${quantity} คอต` : ""}`;
@@ -66,8 +69,9 @@ export function generateOrderSummary(input: OrderSummaryInput, now = new Date())
   const inlineName = firstMatch(rawText, [/(?:COD|ยอด(?:รวม)?|ราคา)\s*[:：]?\s*[\d,]+(?:\.\d+)?\s+([ก-๙A-Za-z][^\d]*?)(?=\s*(?:บ้านเลขที่|ที่อยู่|ส่งที่))/i]);
   const customerName = clean(input.customerName) || firstMatch(rawText, [/(?:ชื่อ|ลูกค้า|ผู้รับ|customer)\s*[:：-]\s*([^\n]+)/i]) || inlineName || lines.find(line => /[ก-๙]{2,}/.test(line) && !/(ตำบล|ต\.|อำเภอ|อ\.|จังหวัด|จ\.|ถนน|หมู่|แขวง|เขต|บ้านเลขที่)/.test(line) && !/\d{5}/.test(line)) || "ไม่ระบุชื่อ";
   const cod = clean(input.cod) || firstMatch(rawText, [/(?:COD|เก็บปลายทาง|ยอด(?:รวม)?|ราคา)\s*[:：]?\s*([\d,]+(?:\.\d+)?)\s*(?:บาท|฿)?/i]) || "ไม่ระบุ";
-  const rawProduct = clean(input.product) || firstMatch(rawText, [/(?:สินค้า|product|sku)\s*[:：-]\s*([^\n]+)/i]) || lines.find(line => /(?:คอต|คอตตอน|กล่อง|ชิ้น|SKU|MOND|CAVALLO|MILANO|SEVIOS|MANGO|GREEN|RED|BLUE|PURPLE|เซียร่า|ซีวอส|มอนด์)/i.test(line)) || "ไม่ระบุสินค้า";
-  const product = normalizeProduct(rawProduct);
+  const customAliasText = input.productAliases?.find(alias => alias.isActive !== false && rawText.toLowerCase().includes(alias.alias.toLowerCase()))?.alias;
+  const rawProduct = clean(input.product) || firstMatch(rawText, [/(?:สินค้า|product|sku)\s*[:：-]\s*([^\n]+)/i]) || (customAliasText ? rawText : "") || lines.find(line => /(?:คอต|คอตตอน|กล่อง|ชิ้น|SKU|MOND|CAVALLO|MILANO|SEVIOS|MANGO|GREEN|RED|BLUE|PURPLE|เซียร่า|ซีวอส|มอนด์)/i.test(line)) || "ไม่ระบุสินค้า";
+  const product = normalizeProduct(rawProduct, input.productAliases);
   const inlineAddress = firstMatch(rawText, [/((?:บ้านเลขที่|ที่อยู่|ส่งที่)\s*[^\n]*?)(?=\s*(?:เบอร์|โทร|มือถือ)\s*[:：]?\s*0|\s*0\d{8,9}\s*$)/i]);
   const address = inlineAddress || parseAddress(lines.filter(line => line !== customerName && !line.replace(/[ -]/g, "").includes(phone)));
   const orderNumber = clean(input.orderNumber) || thaiOrderNumber(now);

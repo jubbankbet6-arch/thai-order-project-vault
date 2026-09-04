@@ -9,6 +9,7 @@ import {
   vaultRevisions,
   auditLogs,
   chatMessages,
+  productAliases,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -277,4 +278,24 @@ export async function listAuditLogs(limit = 100) {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).limit(limit);
+}
+
+export async function listProductAliases(ownerId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(productAliases).where(eq(productAliases.ownerId, ownerId)).orderBy(desc(productAliases.updatedAt));
+}
+
+export async function createProductAlias(ownerId: number, input: { alias: string; canonicalSku: string; canonicalLabel: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.insert(productAliases).values({ ownerId, alias: input.alias, canonicalSku: input.canonicalSku, canonicalLabel: input.canonicalLabel });
+  return listProductAliases(ownerId);
+}
+
+export async function updateProductAlias(ownerId: number, id: number, input: { alias: string; canonicalSku: string; canonicalLabel: string; isActive?: boolean }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is not available");
+  await db.update(productAliases).set(input).where(and(eq(productAliases.id, id), eq(productAliases.ownerId, ownerId)));
+  return listProductAliases(ownerId);
 }

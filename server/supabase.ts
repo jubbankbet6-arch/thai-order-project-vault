@@ -9,6 +9,7 @@ export type LiveOrderItem = {
   emoji?: string | null;
   display_for_packer?: string | null;
   telegram_final_mapped?: string | null;
+  label_display?: string | null;
   quantity?: number | null;
   qty?: number | null;
   unit_price?: number | null;
@@ -39,6 +40,7 @@ export type LiveOrder = {
   th_name: string | null;
   emoji: string | null;
   display_for_packer: string | null;
+  label_display: string | null;
   telegram_status: string | null;
   order_status: string | null;
   audit_status: string | null;
@@ -82,7 +84,7 @@ export type LiveThread = {
 const orderSelect = [
   "id", "upsert_key", "order_number", "order_date", "order_time", "created_at", "updated_at",
   "customer_name", "facebook_name", "phone", "full_address", "address_display_packer",
-  "page_name", "page_id", "thread_id", "threadId", "cod_amount", "expected_cod", "sku", "th_name", "emoji",
+  "page_name", "page_id", "thread_id", "threadId", "cod_amount", "expected_cod", "sku", "th_name", "emoji", "label_display",
   "display_for_packer", "telegram_status", "order_status", "audit_status", "audit_flags",
   "cod_check_status", "is_ready_to_pack", "telegram_message", "telegram_chat_id", "clean_text", "single_cleaned_block", "telegram_body",
 ].join(",");
@@ -90,7 +92,7 @@ const orderSelect = [
 const itemSelect = [
   "id", "upsert_key", "order_number", "order_date", "order_time", "created_at", "updated_at",
   "customer_name", "facebook_name", "phone", "full_address", "address_display_packer", "addressclean",
-  "page_name", "page_id", "thread_id", "threadId", "sku", "th_name", "emoji", "display_for_packer",
+  "page_name", "page_id", "thread_id", "threadId", "sku", "th_name", "emoji", "label_display", "display_for_packer",
   "telegram_final_mapped", "quantity", "qty", "unit_price", "expected_cod", "cod_amount", "telegram_status",
   "order_status", "audit_status", "audit_flags", "cod_check_status", "is_ready_to_pack", "telegram_message",
   "telegram_chat_id", "clean_text", "single_cleaned_block", "telegram_body",
@@ -156,6 +158,7 @@ function normalizeItem(row: Record<string, unknown>): LiveOrderItem {
     emoji: text(row.emoji),
     display_for_packer: text(row.display_for_packer),
     telegram_final_mapped: text(row.telegram_final_mapped),
+    label_display: text(row.label_display),
     quantity: number(row.quantity),
     qty: number(row.qty),
     unit_price: number(row.unit_price),
@@ -189,6 +192,7 @@ function normalizeOrder(row: Record<string, unknown>, items: LiveOrderItem[]): L
     th_name: text(row.th_name),
     emoji: text(row.emoji),
     display_for_packer: text(row.display_for_packer) ?? text(row.final_display_for_packer),
+    label_display: text(row.label_display),
     telegram_status: text(row.telegram_status),
     order_status: text(row.order_status),
     audit_status: text(row.audit_status),
