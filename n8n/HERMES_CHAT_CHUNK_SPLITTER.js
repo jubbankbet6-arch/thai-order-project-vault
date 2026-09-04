@@ -4,6 +4,19 @@
 // Output: one normalized message item per Meta message for the two processors.
 // No API calls and no page-name guessing happen here.
 
+// Authoritative page registry. Match by exact page_id only; never infer a
+// page from a name, email, ID length, or participant position.
+const MASTERCONFIG = [
+  { page_index: "BB_01", page_id: "103411062505149", page_name: "🎀BBεїзเบอร์หนึ่งสโตร์", system_status: "ON", assigned_agent: "#ไนท์รา", assigned_hashtag: "🔮#BB_ORDER_01" },
+  { page_index: "BB_02", page_id: "113923148350742", page_name: "🎶BB ↠ STORE", system_status: "ON", assigned_agent: "#Venika", assigned_hashtag: "🔮#BB_ORDER_02" },
+  { page_index: "BB_03", page_id: "111414924711459", page_name: "🍇BBสโตร์.", system_status: "ON", assigned_agent: "#Mali", assigned_hashtag: "🔮#BB_ORDER_03" },
+  { page_index: "BB_04", page_id: "1047257891810878", page_name: "💗Bb store๐", system_status: "ON", assigned_agent: "#🍉TANGMO", assigned_hashtag: "🔮#BB_ORDER_04" },
+  { page_index: "BB_05", page_id: "1064404466767377", page_name: "เจ๊บี 🅱🅱", system_status: "ON", assigned_agent: "#👑เจ๊บี", assigned_hashtag: "🔮#BB_ORDER_05" },
+  { page_index: "BB_06", page_id: "1235719106287717", page_name: "🛒ร้าน:เจ๊บี", system_status: "ON", assigned_agent: "#🍀ใบบัว", assigned_hashtag: "🔮#BB_ORDER_06" },
+  { page_index: "BB_07", page_id: "1032290633303246", page_name: "💬ร้าน:เจ๊ B", system_status: "ON", assigned_agent: "💬#", assigned_hashtag: "🔮#BB_ORDER_07" },
+];
+const PAGE_BY_ID = new Map(MASTERCONFIG.map(page => [String(page.page_id), page]));
+
 const output = [];
 const seen = new Set();
 const now = new Date().toISOString();
@@ -46,8 +59,10 @@ function findMessages(value, context = {}) {
   }
   if (!value || typeof value !== "object") return;
 
-  const pageId = String(context.pageId ?? value.page_id ?? value.pageId ?? "");
-  const pageName = context.pageName ?? value.page_name ?? value.pageName ?? null;
+  const candidatePageId = String(context.pageId ?? value.page_id ?? value.pageId ?? "");
+  const configPage = PAGE_BY_ID.get(candidatePageId);
+  const pageId = configPage?.page_id ?? candidatePageId;
+  const pageName = configPage?.page_name ?? context.pageName ?? value.page_name ?? value.pageName ?? null;
   const conversationId = String(context.conversationId ?? value.conversation_id ?? value.thread_id ?? value.id ?? "");
   const participants = Array.isArray(value.participants?.data) ? value.participants.data : context.participants ?? [];
   const messages = Array.isArray(value.messages?.data) ? value.messages.data : null;
