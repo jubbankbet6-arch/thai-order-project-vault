@@ -25,6 +25,7 @@ import { fetchExternalChatMessages, fetchLiveOrder, fetchLiveOrders, fetchLivePr
 import { generateOrderSummary } from "./order-summary";
 import { verifyVaultAccessCode } from "./vault-access";
 import { sendMetaMessage } from "./meta";
+import { storagePut } from "./storage";
 
 const projectInput = z.object({
   name: z.string().trim().min(1).max(180),
@@ -127,11 +128,28 @@ export const appRouter = router({
         return bTime - aTime;
       });
     }),
-    sendReply: adminProcedure.input(z.object({ pageId: z.string().min(1), threadId: z.string().min(1), recipientId: z.string().min(1), text: z.string().max(4_000).optional(), imageUrl: z.string().url().optional() })).mutation(async ({ ctx, input }) => {
-      const result = await sendMetaMessage(input);
-      await saveChatMessage({ providerMessageId: result.message_id, pageId: input.pageId, threadId: input.threadId, senderId: input.pageId, senderType: "admin", direction: "outbound", text: input.text, attachments: input.imageUrl ? [{ type: "image", url: input.imageUrl }] : undefined, adminUserId: ctx.user.id });
-      await createAuditLog({ actorUserId: ctx.user.id, actorName: ctx.user.name, action: "message_sent", entityType: "chat_message", entityId: result.message_id, pageId: input.pageId, threadId: input.threadId, metadata: { hasText: Boolean(input.text), hasImage: Boolean(input.imageUrl) } });
-      return { ok: true, messageId: result.message_id };
+    sendReply: adminProcedure.input(z.object({ pageId: z.string().min(1), threadId: z.string().min(1), recipientId: z.string().min(1), text: z.string().max(4_000).optional(), imageUrl: z.string().url().optional(), stickerId: z.string().max(255).optional() })).mutation(async ({ ctx, input }) => {
+      try {
+        const result = await sendMetaMessage(input);
+        await saveChatMessage({ providerMessageId: result.message_id, pageId: input.pageId, threadId: input.threadId, senderId: input.pageId, senderType: "admin", direction: "outbound", text: input.text, attachments: input.imageUrl ? [{ type: "image", url: input.imageUrl }] : input.stickerId ? [{ type: "sticker", stickerId: input.stickerId }] : undefined, adminUserId: ctx.user.id });
+        await createAuditLog({ actorUserId: ctx.user.id, actorName: ctx.user.name, action: "message_sent", entityType: "chat_message", entityId: result.message_id, pageId: input.pageId, threadId: input.threadId, metadata: { hasText: Boolean(input.text), hasImage: Boolean(input.imageUrl), hasSticker: Boolean(input.stickerId), deliveryStatus: "sent" } });
+        return { ok: true, status: "sent" as const, messageId: result.message_id };
+      } catch (error) {
+        await createAuditLog({ actorUserId: ctx.user.id, actorName: ctx.user.name, action: "message_send_failed", entityType: "chat_message", pageId: input.pageId, threadId: input.threadId, metadata: { hasText: Boolean(input.text), hasImage: Boolean(input.imageUrl), hasSticker: Boolean(input.stickerId), deliveryStatus: "failed", error: String(error instanceof Error ? error.message : error).slice(0, 500) } });
+        throw error;
+      }
+    }),
+    uploadImage: adminProcedure.input(z.object({ fileName: z.string().min(1).max(180), contentType: z.string().regex(/^image\/(jpeg|png|gif|webp)$/i), base64: z.string().min(1).max(8_000_000) })).mutation(async ({ ctx, input }) => {
+      const bytes = Buffer.from(input.base64.replace(/^data:[^;]+;base64,/, ""), "base64");
+      if (bytes.length > 6_000_000) throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: "รูปภาพต้องมีขนาดไม่เกิน 6 MB" });
+      const uploaded = await storagePut(`chat-uploads/${ctx.user.id}/${input.fileName.replace(/[^a-zA-Z0-9._-]/g, "_")}`, bytes, input.contentType);
+      return uploaded;
+    }),
+    deliveryHealth: adminProcedure.query(async () => {
+      const logs = await listAuditLogs(200);
+      const failed = logs.filter(log => log.action === "message_send_failed");
+      const sent = logs.filter(log => log.action === "message_sent");
+      return { failed, sent, checkedAt: new Date().toISOString() };
     }),
     audit: adminProcedure.query(() => listAuditLogs()),
   }),

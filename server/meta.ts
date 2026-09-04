@@ -39,13 +39,14 @@ export function verifyMetaSignature(rawBody: string, signature: string | undefin
   return expected.length === received.length && timingSafeEqual(expected, received);
 }
 
-export async function sendMetaMessage(input: { pageId: string; recipientId: string; text?: string; imageUrl?: string }) {
+export async function sendMetaMessage(input: { pageId: string; recipientId: string; text?: string; imageUrl?: string; stickerId?: string }) {
   const accessToken = await pageToken(input.pageId);
   if (!accessToken) throw new Error(`No Meta page token configured for page ${input.pageId}`);
-  if (!input.text?.trim() && !input.imageUrl) throw new Error("Message text or image is required");
+  if (!input.text?.trim() && !input.imageUrl && !input.stickerId) throw new Error("Message text, image, or sticker is required");
   const message: Record<string, unknown> = {};
   if (input.text?.trim()) message.text = input.text.trim();
   if (input.imageUrl) message.attachment = { type: "image", payload: { url: input.imageUrl, is_reusable: false } };
+  if (input.stickerId) message.sticker_id = input.stickerId.trim();
   const response = await fetch(`https://graph.facebook.com/v26.0/${encodeURIComponent(input.pageId)}/messages?access_token=${encodeURIComponent(accessToken)}`, {
     method: "POST",
     headers: { "content-type": "application/json" },

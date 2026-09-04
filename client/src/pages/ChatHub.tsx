@@ -52,6 +52,9 @@ export default function ChatHub() {
   const [statusFilter, setStatusFilter] = useState<"all" | "unread" | "ordered">("all");
   const [replyText, setReplyText] = useState("");
   const [replyImageUrl, setReplyImageUrl] = useState("");
+  const [stickerId, setStickerId] = useState("");
+  const [deliveryStatus, setDeliveryStatus] = useState<"idle" | "sending" | "sent" | "failed">("idle");
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [summaryText, setSummaryText] = useState("");
   const [summary, setSummary] = useState<{ orderNumber: string; customerName: string; phone: string; address: string; product: string; cod: string; copyText: string } | null>(null);
@@ -82,7 +85,8 @@ export default function ChatHub() {
   const messagesQuery = trpc.chat.messages.useQuery({ pageId: selectedPageId, threadId: selectedThreadId }, { enabled: Boolean(selectedPageId && selectedThreadId), refetchInterval: 10_000 });
   const linkedOrdersQuery = trpc.orders.forThread.useQuery({ pageId: selectedPageId, threadId: selectedThreadId }, { enabled: Boolean(selectedPageId && selectedThreadId), refetchInterval: 60_000 });
   const totalMessages = useMemo(() => threads.reduce((total, thread) => total + thread.messageCount, 0), [threads]);
-  const sendReply = trpc.chat.sendReply.useMutation({ onSuccess: () => { setReplyText(""); setReplyImageUrl(""); messagesQuery.refetch(); } });
+  const uploadImage = trpc.chat.uploadImage.useMutation({ onSuccess: result => setReplyImageUrl(`${window.location.origin}${result.url}`) });
+  const sendReply = trpc.chat.sendReply.useMutation({ onMutate: () => setDeliveryStatus("sending"), onSuccess: () => { setDeliveryStatus("sent"); setReplyText(""); setReplyImageUrl(""); setStickerId(""); messagesQuery.refetch(); }, onError: () => setDeliveryStatus("failed") });
   const generateSummary = trpc.orders.generateSummary.useMutation({ onSuccess: result => { setSummary(result); setSummaryText(""); setReplyText(result.copyText); } });
 
   useEffect(() => { if (!selectedKey && filteredThreads[0]) setSelectedKey(filteredThreads[0].key); }, [filteredThreads, selectedKey]);
@@ -95,9 +99,17 @@ export default function ChatHub() {
   }, [selectedKey, messagesQuery.data?.length, messageFilter]);
 
   const sendCurrentReply = () => {
-    if (!selectedPageId || !selectedThreadId || !selectedCustomerId || (!replyText.trim() && !replyImageUrl.trim())) return;
-    sendReply.mutate({ pageId: selectedPageId, threadId: selectedThreadId, recipientId: selectedCustomerId, text: replyText.trim() || undefined, imageUrl: replyImageUrl.trim() || undefined });
+    if (!selectedPageId || !selectedThreadId || !selectedCustomerId || (!replyText.trim() && !replyImageUrl.trim() && !stickerId.trim())) return;
+    sendReply.mutate({ pageId: selectedPageId, threadId: selectedThreadId, recipientId: selectedCustomerId, text: replyText.trim() || undefined, imageUrl: replyImageUrl.trim() || undefined, stickerId: stickerId.trim() || undefined });
   };
+  const handleImageUpload = (file?: File) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/") || file.size > 6_000_000) return;
+    const reader = new FileReader();
+    reader.onload = () => uploadImage.mutate({ fileName: file.name, contentType: file.type as "image/jpeg", base64: String(reader.result) });
+    reader.readAsDataURL(file);
+  };
+  const addEmoji = (emoji: string) => setReplyText(current => `${current}${current ? " " : ""}${emoji}`);
   const copySummary = async () => {
     if (!replyText.trim()) return;
     await navigator.clipboard.writeText(replyText);
@@ -110,9 +122,11 @@ export default function ChatHub() {
   const composer = <div className="border-t border-violet-500/10 pt-2">
     <div className="mb-2 flex flex-wrap gap-1.5">
       {quickReplies.map(reply => <button key={reply} type="button" onClick={() => setReplyText(reply)} className="rounded-lg border border-fuchsia-400/15 bg-fuchsia-500/[0.06] px-2 py-1 text-[10px] text-fuchsia-200/75 transition hover:bg-fuchsia-500/20 hover:text-fuchsia-100">{reply}</button>)}
+      {["😊", "👍", "❤️", "🙏", "📦"].map(emoji => <button key={emoji} type="button" onClick={() => addEmoji(emoji)} className="rounded-lg border border-violet-400/15 bg-violet-500/[0.06] px-2 py-1 text-sm transition hover:bg-violet-500/20">{emoji}</button>)}
     </div>
-    <div className="flex gap-2"><Input value={replyText} onChange={event => setReplyText(event.target.value)} placeholder={selectedCustomerId ? "พิมพ์ตอบลูกค้า…" : "ไม่พบ Customer PSID ของห้องนี้"} disabled={!selectedCustomerId} className="border-violet-500/15 bg-black/25 text-white placeholder:text-violet-100/25" onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendCurrentReply(); } }} /><Button aria-label="ส่งข้อความ" disabled={sendReply.isPending || !selectedCustomerId || (!replyText.trim() && !replyImageUrl.trim())} onClick={sendCurrentReply} className="shrink-0 rounded-xl bg-gradient-to-r from-fuchsia-600 to-violet-600"><Send className="h-4 w-4" /></Button></div>
-    <div className="mt-1 flex items-center gap-2"><ImagePlus className="h-3.5 w-3.5 text-violet-100/35" /><Input value={replyImageUrl} onChange={event => setReplyImageUrl(event.target.value)} placeholder="URL รูปภาพ (ถ้ามี)" className="h-7 border-violet-500/10 bg-black/20 text-xs text-white placeholder:text-violet-100/20" /><span className="whitespace-nowrap text-[10px] text-violet-100/25">Meta API</span></div>
+    <div className="flex gap-2"><Input value={replyText} onChange={event => setReplyText(event.target.value)} placeholder={selectedCustomerId ? "พิมพ์ตอบลูกค้า…" : "ไม่พบ Customer PSID ของห้องนี้"} disabled={!selectedCustomerId} className="border-violet-500/15 bg-black/25 text-white placeholder:text-violet-100/25" onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendCurrentReply(); } }} /><Button aria-label="ส่งข้อความ" disabled={sendReply.isPending || !selectedCustomerId || (!replyText.trim() && !replyImageUrl.trim() && !stickerId.trim())} onClick={sendCurrentReply} className="shrink-0 rounded-xl bg-gradient-to-r from-fuchsia-600 to-violet-600"><Send className="h-4 w-4" /></Button></div>
+    <div className="mt-1 flex flex-wrap items-center gap-2"><input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp" className="hidden" onChange={event => { handleImageUpload(event.target.files?.[0]); event.currentTarget.value = ""; }} /><Button type="button" size="sm" variant="outline" onClick={() => fileInputRef.current?.click()} disabled={uploadImage.isPending} className="h-7 border-violet-500/15 bg-black/20 text-[10px] text-violet-100/70"><ImagePlus className="mr-1 h-3.5 w-3.5" />{uploadImage.isPending ? "กำลังอัปโหลด…" : "แนบรูป"}</Button>{replyImageUrl ? <span className="max-w-40 truncate text-[10px] text-emerald-300">รูปพร้อมส่ง</span> : null}<Input value={stickerId} onChange={event => setStickerId(event.target.value)} placeholder="Sticker ID (ถ้ามี)" className="h-7 min-w-32 flex-1 border-violet-500/10 bg-black/20 text-xs text-white placeholder:text-violet-100/20" /><span className="whitespace-nowrap text-[10px] text-violet-100/25">Meta</span></div>
+    {deliveryStatus !== "idle" ? <div className={`mt-2 flex items-center justify-between rounded-lg border px-2.5 py-1.5 text-[11px] ${deliveryStatus === "sent" ? "border-emerald-400/20 bg-emerald-400/[0.06] text-emerald-300" : deliveryStatus === "failed" ? "border-red-400/20 bg-red-400/[0.06] text-red-300" : "border-fuchsia-400/20 bg-fuchsia-400/[0.06] text-fuchsia-200"}`}><span>{deliveryStatus === "sending" ? "กำลังส่ง…" : deliveryStatus === "sent" ? "ส่งแล้ว" : "ส่งไม่สำเร็จ"}</span>{deliveryStatus === "failed" ? <button type="button" onClick={sendCurrentReply} className="font-semibold underline">ลองส่งใหม่</button> : null}</div> : null}
     {sendReply.isError ? <p className="mt-2 text-[11px] text-amber-300">{sendReply.error.message.includes("No Meta page token") ? "เพจนี้ยังไม่ได้ตั้งค่า Page Access Token ในเซิร์ฟเวอร์" : `ส่งไม่สำเร็จ: ${sendReply.error.message}`}</p> : null}
   </div>;
 
