@@ -389,12 +389,25 @@ export async function fetchExternalChatMessages(pageId?: string, threadId?: stri
     const params = new URLSearchParams({ select, order: "occurred_at.desc", limit: String(limit) });
     if (pageId) params.set("page_id", `eq.${pageId}`);
     if (threadId) params.set("conversation_key", `eq.${threadId}`);
-    const response = await fetch(`${baseUrl}/rest/v1/${table}?${params}`, { headers: { apikey: key, Authorization: `Bearer ${key}` } });
+    let response = await fetch(`${baseUrl}/rest/v1/${table}?${params}`, { headers: { apikey: key, Authorization: `Bearer ${key}` } });
+    if (!response.ok) {
+      // Keep the Chat Hub usable if a deployment has an older table shape.
+      const fallback = new URL(`${baseUrl}/rest/v1/${table}`);
+      fallback.searchParams.set("select", "*");
+      fallback.searchParams.set("order", "occurred_at.desc");
+      fallback.searchParams.set("limit", String(limit));
+      if (pageId) fallback.searchParams.set("page_id", `eq.${pageId}`);
+      if (threadId) fallback.searchParams.set("conversation_key", `eq.${threadId}`);
+      response = await fetch(fallback, { headers: { apikey: key, Authorization: `Bearer ${key}` } });
+    }
     if (!response.ok) throw new Error(`Supabase ${table} returned HTTP ${response.status}`);
     return response.json() as Promise<Array<Record<string, unknown>>>;
   }
   try {
-    const [customers, pages] = await Promise.all([readTable("chat_customer_messages"), readTable("chat_page_messages")]);
+    const [customersResult, pagesResult] = await Promise.allSettled([readTable("chat_customer_messages"), readTable("chat_page_messages")]);
+    const customers = customersResult.status === "fulfilled" ? customersResult.value : [];
+    const pages = pagesResult.status === "fulfilled" ? pagesResult.value : [];
+    if (customersResult.status === "rejected" && pagesResult.status === "rejected") throw customersResult.reason;
     const pageNames = new Map(pages.map(row => [String(row.page_id ?? ""), text(row.page_name)]));
     const rows: Array<Record<string, unknown> & { senderId: unknown; senderName: unknown; senderType: "customer" | "page"; side: "left" | "right"; direction: "inbound" | "outbound" }> = [
       ...customers.map(row => ({ ...row, page_name: pageNames.get(String(row.page_id ?? "")) ?? row.page_name, senderId: row.customer_id, senderName: row.customer_name, customerName: row.customer_name, senderType: "customer" as const, side: "left" as const, direction: "inbound" as const })),
@@ -402,7 +415,7 @@ export async function fetchExternalChatMessages(pageId?: string, threadId?: stri
     ];
     return rows.map((row, index) => ({
       id: Number(row.id ?? index + 1), providerMessageId: text(row.source_message_id), pageId: String(row.page_id ?? ""), pageName: text(row.page_name),
-      threadId: String(row.conversation_key ?? ""), senderId: String(row.senderId ?? ""), senderName: text(row.senderName), customerName: text(row.customerName), senderType: row.senderType, side: row.side, direction: row.direction,
+      threadId: String(row.conversation_key ?? row.conversation_id ?? row.thread_id ?? ""), senderId: String(row.senderId ?? ""), senderName: text(row.senderName), customerName: text(row.customerName), senderType: row.senderType, side: row.side, direction: row.direction,
       text: text(row.message_text), attachmentsJson: jsonText(row.attachments_json), occurredAt: text(row.occurred_at), createdAt: text(row.synced_at),
     })).sort((a, b) => (Date.parse(String(b.occurredAt ?? "")) || 0) - (Date.parse(String(a.occurredAt ?? "")) || 0));
   } catch (error) {
@@ -473,7 +486,12 @@ export async function fetchLiveThreads(search?: string) {
     const directionState = latestDirections.get(key);
     thread.unread = Boolean(directionState && directionState.inbound > directionState.outbound);
   });
-  const orders = await fetchLiveOrders(search);
+  let orders: LiveOrder[] = [];
+  try {
+    orders = await fetchLiveOrders(search);
+  } catch (error) {
+    console.warn("[NIGHTOPS] Chat Hub loaded without order enrichment:", error instanceof Error ? error.message : String(error));
+  }
   for (const order of orders) {
     const key = `${order.page_id ?? ""}::${order.thread_id ?? order.threadId ?? ""}`;
     const thread = groups.get(key);
