@@ -21,7 +21,7 @@ import {
   createProductAlias,
   updateProductAlias,
 } from "./db";
-import { fetchExternalChatMessages, fetchLiveOrder, fetchLiveOrders, fetchOrdersForThread, fetchLiveProductMappings, fetchLiveThreads, fetchStockProducts, getLiveOrderStats, syncProductAliasToMaster, updateStockProduct } from "./supabase";
+import { fetchExternalChatMessages, fetchLiveOrder, fetchLiveOrders, fetchOrdersForThread, fetchLiveProductMappings, fetchLiveThreads, fetchStockProducts, getLiveOrderStats, syncProductAliasToMaster, updateProductMapAlias, updateStockProduct } from "./supabase";
 import { generateOrderSummary } from "./order-summary";
 import { verifyVaultAccessCode } from "./vault-access";
 import { sendMetaMessage } from "./meta";
@@ -138,6 +138,7 @@ export const appRouter = router({
   stock: router({
     products: protectedProcedure.query(() => fetchStockProducts()),
     update: adminProcedure.input(z.object({ id: z.number().int().positive(), stockQty: z.number().min(0).optional(), stockStatus: z.string().trim().max(80).optional(), labelDisplay: z.string().trim().max(255).optional(), unitPrice: z.number().min(0).optional() })).mutation(({ input }) => updateStockProduct(input.id, input)),
+    updateAlias: adminProcedure.input(z.object({ sku: z.string().trim().min(1).max(120), alias: z.string().trim().max(2000) })).mutation(({ input }) => updateProductMapAlias(input.sku, input.alias)),
   }),
   chat: router({
     messages: protectedProcedure.input(z.object({ pageId: z.string().min(1), threadId: z.string().min(1) })).query(async ({ input }) => {

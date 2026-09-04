@@ -422,6 +422,14 @@ export async function updateStockProduct(id: number, input: { stockQty?: number;
   return fetchStockProducts();
 }
 
+export async function updateProductMapAlias(sku: string, alias: string) {
+  const { baseUrl, key } = config();
+  const cleanAlias = alias.trim();
+  const response = await fetch(`${baseUrl}/rest/v1/product_map_master?sku=eq.${encodeURIComponent(sku)}`, { method: "PATCH", headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify({ alias: cleanAlias || null, alias_text: cleanAlias || null, alias_norm: cleanAlias ? cleanAlias.toLowerCase() : null, updated_at: new Date().toISOString() }) });
+  if (!response.ok) throw new Error(`Supabase product_map_master alias update returned HTTP ${response.status}: ${(await response.text()).slice(0, 300)}`);
+  return { ok: true, sku, alias: cleanAlias };
+}
+
 function jsonText(value: unknown) {
   if (value === null || value === undefined) return null;
   return typeof value === "string" ? value : JSON.stringify(value);
