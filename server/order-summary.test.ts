@@ -38,4 +38,17 @@ describe("generateOrderSummary", () => {
     expect(result.product).toBe("🟩 SEVIOS_GREEN(ซีวอสเขียว) 1 คอต");
     expect(result.copyText).toContain("🟩 SEVIOS_GREEN(ซีวอสเขียว) 1 คอต");
   });
+
+  it("parses a compact single-line COD order", () => {
+    const result = generateOrderSummary({
+      rawText: "COD 200 อมรยินดีพจน์ บ้านเลขที่355 ซอยเพชรเกษม112 แขวงหนองค้างพลู เขตหนองเเขม กรุงเทพ10160เบอร์0620090155✅ ซีวอสแดง 1",
+    }, new Date("2026-09-04T08:42:28.000Z"));
+
+    expect(result.customerName).toBe("อมรยินดีพจน์");
+    expect(result.phone).toBe("0620090155");
+    expect(result.address).toContain("บ้านเลขที่355");
+    expect(result.address).toContain("กรุงเทพ10160");
+    expect(result.product).toBe("🟥 SEVIOS_RED(ซีวอสแดง) 1 คอต");
+    expect(result.cod).toBe("200");
+  });
 });

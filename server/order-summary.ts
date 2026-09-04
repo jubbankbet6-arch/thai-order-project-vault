@@ -63,11 +63,13 @@ export function generateOrderSummary(input: OrderSummaryInput, now = new Date())
   const rawText = clean(input.rawText);
   const lines = rawText.split(/\r?\n/).map(clean).filter(Boolean);
   const phone = firstMatch(rawText, [/(0\d{8,9})/, /(?:โทร|เบอร์|phone|tel)\s*[:：]?\s*([0-9 -]{9,13})/i]).replace(/[ -]/g, "");
-  const customerName = clean(input.customerName) || firstMatch(rawText, [/(?:ชื่อ|ลูกค้า|ผู้รับ|customer)\s*[:：-]\s*([^\n]+)/i]) || lines.find(line => /[ก-๙]{2,}/.test(line) && !/(ตำบล|ต\.|อำเภอ|อ\.|จังหวัด|จ\.|ถนน|หมู่|แขวง|เขต|บ้านเลขที่)/.test(line) && !/\d{5}/.test(line)) || "ไม่ระบุชื่อ";
+  const inlineName = firstMatch(rawText, [/(?:COD|ยอด(?:รวม)?|ราคา)\s*[:：]?\s*[\d,]+(?:\.\d+)?\s+([ก-๙A-Za-z][^\d]*?)(?=\s*(?:บ้านเลขที่|ที่อยู่|ส่งที่))/i]);
+  const customerName = clean(input.customerName) || firstMatch(rawText, [/(?:ชื่อ|ลูกค้า|ผู้รับ|customer)\s*[:：-]\s*([^\n]+)/i]) || inlineName || lines.find(line => /[ก-๙]{2,}/.test(line) && !/(ตำบล|ต\.|อำเภอ|อ\.|จังหวัด|จ\.|ถนน|หมู่|แขวง|เขต|บ้านเลขที่)/.test(line) && !/\d{5}/.test(line)) || "ไม่ระบุชื่อ";
   const cod = clean(input.cod) || firstMatch(rawText, [/(?:COD|เก็บปลายทาง|ยอด(?:รวม)?|ราคา)\s*[:：]?\s*([\d,]+(?:\.\d+)?)\s*(?:บาท|฿)?/i]) || "ไม่ระบุ";
   const rawProduct = clean(input.product) || firstMatch(rawText, [/(?:สินค้า|product|sku)\s*[:：-]\s*([^\n]+)/i]) || lines.find(line => /(?:คอต|คอตตอน|กล่อง|ชิ้น|SKU|MOND|CAVALLO|MILANO|SEVIOS|MANGO|GREEN|RED|BLUE|PURPLE|เซียร่า|ซีวอส|มอนด์)/i.test(line)) || "ไม่ระบุสินค้า";
   const product = normalizeProduct(rawProduct);
-  const address = parseAddress(lines.filter(line => line !== customerName && !line.replace(/[ -]/g, "").includes(phone)));
+  const inlineAddress = firstMatch(rawText, [/((?:บ้านเลขที่|ที่อยู่|ส่งที่)\s*[^\n]*?)(?=\s*(?:เบอร์|โทร|มือถือ)\s*[:：]?\s*0|\s*0\d{8,9}\s*$)/i]);
+  const address = inlineAddress || parseAddress(lines.filter(line => line !== customerName && !line.replace(/[ -]/g, "").includes(phone)));
   const orderNumber = clean(input.orderNumber) || thaiOrderNumber(now);
   const copyText = [orderNumber, customerName, phone || "ไม่ระบุเบอร์โทร", address || "ไม่ระบุที่อยู่", product, cod === "ไม่ระบุ" ? cod : `${cod} บาท`].join("\n");
   return { orderNumber, customerName, phone, address, product, cod, copyText };
