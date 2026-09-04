@@ -24,10 +24,16 @@ for (const item of $input.all()) {
   for (const conversation of conversations) {
     const conversationId = String(conversation.id ?? "");
     const participants = Array.isArray(conversation.participants?.data) ? conversation.participants.data : [];
+    // HTTP Request nodes can return only Facebook's body and drop the input
+    // config. Recover the page context from the participant with a long Meta
+    // Page ID; this matches the real Graph response shape.
+    const inferredPage = participants.find(participant => String(participant.id ?? "").length > 10);
+    const conversationPageId = pageId || String(inferredPage?.id ?? "");
+    const conversationPageName = pageName || inferredPage?.name || null;
     const messages = Array.isArray(conversation.messages?.data) ? conversation.messages.data : [];
 
     if (!messages.length) {
-      output.push({ json: { record_type: "conversation", page_id: pageId, page_name: pageName, page_index: source.page_index ?? null, conversation_id: conversationId, conversation_key: conversationId, conversation_updated_time: conversation.updated_time ?? null, conversation_message_count: conversation.message_count ?? 0, conversation_unread_count: conversation.unread_count ?? 0, can_reply: conversation.can_reply ?? null, participants, fetched_at: source.fetched_at ?? now, fetch_status: source.fetch_status ?? "success", raw_conversation: conversation } });
+      output.push({ json: { record_type: "conversation", page_id: conversationPageId, page_name: conversationPageName, page_index: source.page_index ?? null, conversation_id: conversationId, conversation_key: conversationId, conversation_updated_time: conversation.updated_time ?? null, conversation_message_count: conversation.message_count ?? 0, conversation_unread_count: conversation.unread_count ?? 0, can_reply: conversation.can_reply ?? null, participants, fetched_at: source.fetched_at ?? now, fetch_status: source.fetch_status ?? "success", raw_conversation: conversation } });
       continue;
     }
 
@@ -38,12 +44,12 @@ for (const item of $input.all()) {
       const text = cleanText(message.message ?? message.text ?? "");
       const attachments = attachmentsOf(message);
       const isEcho = message.is_echo === true;
-      const speakerHint = isEcho || (pageId && fromId === pageId) ? "page" : "customer";
-      const dedupeKey = ["meta", pageId, conversationId, messageId || occurredAt, text.slice(0, 100)].join(":");
+      const speakerHint = isEcho || (conversationPageId && fromId === conversationPageId) ? "page" : "customer";
+      const dedupeKey = ["meta", conversationPageId, conversationId, messageId || occurredAt, text.slice(0, 100)].join(":");
 
       output.push({ json: {
         record_type: "message",
-        page_id: pageId, page_name: pageName, page_index: source.page_index ?? null,
+        page_id: conversationPageId, page_name: conversationPageName, page_index: source.page_index ?? null,
         conversation_id: conversationId, conversation_key: conversationId,
         conversation_updated_time: conversation.updated_time ?? null,
         conversation_message_count: conversation.message_count ?? null,
