@@ -1,99 +1,81 @@
-// n8n Code node: 🌌 HERMES_CHAT_RAW_ALL
+// n8n Code node: 🌌 HERMES_CHAT_RAW_ALL - CHAT ONLY MODE
+// ไม่ทำออเดอร์ ไม่ทำ 87 คอลัมน์ มีเฉพาะข้อมูลแชทที่จำเป็น
 // Mode: Run Once for All Items
-// Input: one item per page from 🌌 HERMES_FETCH_FACEBOOK_ALL.
-// This node does not filter COD or speaker; it preserves every message and timestamp.
 
 const output = [];
-const now = new Date().toISOString();
+const seen = new Set();
 
-function cleanText(value) {
-  return String(value ?? "").replace(/udfe[0-9a-fA-F]{0,4}/gi, "").replace(/\\?ud[0-9a-fA-F]+/gi, "").replace(/\\n/g, "\n").replace(/\\\s*n/gi, "\n").trim();
-}
-function attachmentsOf(message) {
-  if (Array.isArray(message.attachments?.data)) return message.attachments.data;
-  return Array.isArray(message.attachments) ? message.attachments : [];
-}
-function imageUrlsOf(attachments) {
-  const urls = [];
-  for (const attachment of attachments) {
-    const candidates = [
-      attachment.url,
-      attachment.file_url,
-      attachment.payload?.url,
-      attachment.image_data?.url,
-      attachment.target?.url,
-    ];
-    for (const url of candidates) {
-      if (typeof url === "string" && /^https?:\/\//i.test(url) && !urls.includes(url)) urls.push(url);
-    }
-  }
-  return urls;
+const MASTERCONFIG = [
+  { page_id: "103411062505149", page_name: "🎀BBεїзเบอร์หนึ่งสโตร์" },
+  { page_id: "113923148350742", page_name: "🎶BB ↠ STORE" },
+  { page_id: "111414924711459", page_name: "🍇BBสโตร์." },
+  { page_id: "1047257891810878", page_name: "💗Bb store๐" },
+  { page_id: "1064404466767377", page_name: "เจ๊บี 🅱🅱" },
+  { page_id: "1235719106287717", page_name: "🛒ร้าน:เจ๊บี" },
+  { page_id: "1032290633303246", page_name: "💬ร้าน:เจ๊ B" },
+];
+const PAGE_MAP = new Map(MASTERCONFIG.map(page => [String(page.page_id), page.page_name]));
+
+function getThreads(value) {
+  if (Array.isArray(value?.data)) return value.data;
+  if (value && typeof value === "object" && Object.keys(value).every(key => /^\d+$/.test(key))) return Object.values(value);
+  if (Array.isArray(value)) return value;
+  return [value];
 }
 
 for (const item of $input.all()) {
-  const source = item.json ?? {};
-  const graph = source.facebook_response ?? source.body ?? source;
-  const pageId = String(source.page_id ?? source.pageId ?? graph.page_id ?? "");
-  const pageName = source.page_name ?? source.pageName ?? null;
-  const conversations = Array.isArray(graph.data) ? graph.data : Array.isArray(graph.conversations) ? graph.conversations : [];
+  const threads = getThreads(item.json);
 
-  for (const conversation of conversations) {
-    const conversationId = String(conversation.id ?? "");
-    const participants = Array.isArray(conversation.participants?.data) ? conversation.participants.data : [];
-    // HTTP Request nodes can return only Facebook's body and drop the input
-    // config. Recover the page context from the participant with a long Meta
-    // Page ID; this matches the real Graph response shape.
-    const inferredPage = participants.find(participant => String(participant.id ?? "").length > 10);
-    const conversationPageId = pageId || String(inferredPage?.id ?? "");
-    const conversationPageName = pageName || inferredPage?.name || null;
-    const messages = Array.isArray(conversation.messages?.data) ? conversation.messages.data : [];
-
-    if (!messages.length) {
-      output.push({ json: { record_type: "conversation", page_id: conversationPageId, page_name: conversationPageName, page_index: source.page_index ?? null, conversation_id: conversationId, conversation_key: conversationId, conversation_updated_time: conversation.updated_time ?? null, conversation_message_count: conversation.message_count ?? 0, conversation_unread_count: conversation.unread_count ?? 0, can_reply: conversation.can_reply ?? null, participants, fetched_at: source.fetched_at ?? now, fetch_status: source.fetch_status ?? "success", raw_conversation: conversation } });
-      continue;
-    }
+  for (const thread of threads) {
+    if (!thread) continue;
+    const participants = thread.participants?.data ?? [];
+    const messages = thread.messages?.data ?? thread.data?.data ?? [];
+    const conversationId = String(thread.id ?? "");
 
     for (const message of messages) {
-      const messageId = String(message.id ?? "");
-      const fromId = String(message.from?.id ?? "");
-      const occurredAt = message.created_time ?? conversation.updated_time ?? source.fetched_at ?? now;
-      const text = cleanText(message.message ?? message.text ?? "");
-      const attachments = attachmentsOf(message);
-      const imageUrls = imageUrlsOf(attachments);
-      const isEcho = message.is_echo === true;
-      // Do not use from.email: Meta can expose a customer profile as
-      // <id>@facebook.com too. Use explicit echo/ID signals and a normalized
-      // configured page-name match instead.
-      const explicitPageSender = Boolean(conversationPageId && fromId && fromId === conversationPageId);
-      const speakerHint = isEcho || (conversationPageId && fromId === conversationPageId) || explicitPageSender ? "page" : "customer";
-      const dedupeKey = messageId ? `meta:${messageId}` : `meta:${conversationPageId}:${conversationId}:${occurredAt}:${text.slice(0, 100)}`;
+      if (!message?.id || seen.has(message.id)) continue;
+      seen.add(message.id);
 
-      output.push({ json: {
-        record_type: "message",
-        page_id: conversationPageId, page_name: conversationPageName, page_index: source.page_index ?? null,
-        conversation_id: conversationId, conversation_key: conversationId,
-        conversation_updated_time: conversation.updated_time ?? null,
-        conversation_message_count: conversation.message_count ?? null,
-        conversation_unread_count: conversation.unread_count ?? null,
-        can_reply: conversation.can_reply ?? null, participants,
-        message_id: messageId || null, source_message_id: messageId || null, dedupe_key: dedupeKey,
-        message_text: text, message_type: imageUrls.length ? "image" : attachments.length ? "attachment" : "text", attachments,
-        attachment_count: attachments.length, has_image: imageUrls.length > 0, image_urls: imageUrls,
-        shares: message.shares ?? null, sticker: message.sticker ?? null,
-        message_from: message.from ?? null, message_from_id: fromId || null, message_from_name: message.from?.name ?? null,
-        message_from_is_page: explicitPageSender, message_is_echo: isEcho, speaker_hint: speakerHint,
-        message_created_time: message.created_time ?? null, occurred_at: occurredAt,
-        fetched_at: source.fetched_at ?? now, fetch_status: source.fetch_status ?? "success",
-        raw_conversation: conversation, raw_message: message,
-      } });
+      const text = String(message.message ?? "").trim();
+      if (!text) continue;
+
+      let pageId = "";
+      let pageName = "";
+      for (const participant of participants) {
+        const participantId = String(participant?.id ?? "");
+        if (PAGE_MAP.has(participantId)) {
+          pageId = participantId;
+          pageName = PAGE_MAP.get(participantId) ?? "";
+          break;
+        }
+      }
+
+      const fromId = String(message.from?.id ?? "");
+      const isPage = fromId === pageId;
+      const customer = participants.find(participant => String(participant?.id ?? "") !== pageId) ?? message.from;
+      const createdAt = message.created_time ?? new Date().toISOString();
+
+      output.push({
+        json: {
+          Page_ID: pageId,
+          Page_Name: pageName,
+          conversation_id: conversationId,
+          customer_name: customer?.name ?? message.from?.name ?? "",
+          customer_id: customer?.id ?? "",
+          message_id: message.id,
+          message_text: text,
+          speaker: isPage ? "page" : "customer",
+          message_from_name: message.from?.name ?? "",
+          time: createdAt,
+          time_th: new Date(createdAt).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" }),
+        },
+      });
     }
   }
-}
-
-if (!output.length) {
-  return [];
 }
 
 return output;
 
-// Downstream processors decide the final speaker/table. Keep raw_message for audit and troubleshooting.
+// Customer branch: filter speaker == "customer" → chat_customer_messages
+// Page branch: filter speaker == "page" → chat_page_messages
+// Dedupe source: message_id

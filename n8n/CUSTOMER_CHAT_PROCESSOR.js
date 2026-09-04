@@ -9,7 +9,7 @@ const seen = new Set();
 for (const item of $input.all()) {
   const r = item.json ?? {};
 
-  const pageId = String(r.page_id ?? r.pageId ?? "");
+  const pageId = String(r.page_id ?? r.Page_ID ?? r.pageId ?? "");
   const conversationKey = String(
     r.conversation_key ??
     r.conversation_id ??
@@ -45,6 +45,7 @@ for (const item of $input.all()) {
 
   // ตัดเฉพาะข้อความที่ระบุชัดเจนว่าเป็นข้อความจากเพจ
   if (
+    r.speaker === "page" ||
     r.is_echo === true ||
     r.message_is_echo === true ||
     (pageId && fromId && pageId === fromId)
@@ -56,6 +57,7 @@ for (const item of $input.all()) {
     r.occurred_at ??
     r.message_created_time ??
     r.created_time ??
+    r.time ??
     null;
 
   const dedupeKey = String(
@@ -75,7 +77,7 @@ for (const item of $input.all()) {
       source_message_id: messageId || null,
       dedupe_key: dedupeKey,
       page_id: pageId || null,
-      page_name: r.page_name ?? r.pageName ?? null,
+      page_name: r.page_name ?? r.Page_Name ?? r.pageName ?? null,
       conversation_key: conversationKey || null,
       customer_id: fromId || null,
       customer_name:

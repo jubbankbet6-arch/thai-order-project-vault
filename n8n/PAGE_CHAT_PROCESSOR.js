@@ -12,13 +12,14 @@ for (const item of $input.all()) {
     || Boolean(row.message_id || row.source_message_id || row.message_text || row.message || (Array.isArray(row.attachments) && row.attachments.length) || (Array.isArray(row.image_urls) && row.image_urls.length));
   if (!isMessage) continue;
 
-  const pageId = String(row.page_id ?? row.pageId ?? "");
+  const pageId = String(row.page_id ?? row.Page_ID ?? row.pageId ?? "");
   const from = row.message_from ?? row.from ?? {};
   const fromId = String(row.message_from_id ?? row.sender_id ?? from.id ?? "");
   const fromName = String(row.message_from_name ?? row.sender_name ?? from.name ?? "");
-  const pageName = String(row.page_name ?? row.pageName ?? "");
+  const pageName = String(row.page_name ?? row.Page_Name ?? row.pageName ?? "");
 
-  const isPage = row.speaker_hint === "page"
+  const isPage = row.speaker === "page"
+    || row.speaker_hint === "page"
     || row.message_from_is_page === true
     || row.message_is_echo === true
     || row.is_echo === true
@@ -29,7 +30,7 @@ for (const item of $input.all()) {
   const conversationKey = String(row.conversation_key ?? row.conversation_id ?? row.thread_id ?? row.threadId ?? "");
   const messageId = String(row.source_message_id ?? row.message_id ?? "");
   const text = row.message_text ?? row.message ?? row.text ?? "";
-  const occurredAt = row.occurred_at ?? row.message_created_time ?? row.created_time ?? null;
+  const occurredAt = row.occurred_at ?? row.message_created_time ?? row.created_time ?? row.time ?? null;
   const dedupeKey = messageId ? `meta:${messageId}` : String(row.dedupe_key ?? `meta:${pageId}:${conversationKey}:${occurredAt}:${text}`);
   if (seen.has(dedupeKey)) continue;
   seen.add(dedupeKey);
