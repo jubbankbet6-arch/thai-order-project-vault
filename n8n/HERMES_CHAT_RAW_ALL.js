@@ -61,6 +61,22 @@ for (const item of $input.all()) {
     }
   }
 }
+
+// n8n stops a branch when a Code node returns zero items. Return a harmless
+// status item on an empty API window; downstream processors skip non-message
+// records, so this prevents a false workflow stop without inventing a chat.
+if (!output.length) {
+  output.push({
+    json: {
+      record_type: "sync_status",
+      status: "empty",
+      message_count: 0,
+      fetched_at: now,
+      note: "Facebook API returned no conversations/messages in this window",
+    },
+  });
+}
+
 return output;
 
 // Downstream processors decide the final speaker/table. Keep raw_message for audit and troubleshooting.
