@@ -6,7 +6,7 @@ async function pageToken(pageId: string) {
   const supabaseUrl = process.env.SUPABASE_URL?.replace(/\/$/, "");
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (supabaseUrl && serviceRoleKey) {
-    const params = new URLSearchParams({ select: "*", page_id: `eq.${pageId}`, limit: "1" });
+    const params = new URLSearchParams({ select: "page_id,page_name,access_token", page_id: `eq.${pageId}`, limit: "1" });
     const response = await fetch(`${supabaseUrl}/rest/v1/page_tokens_vault?${params}`, { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } });
     if (response.ok) {
       const rows = await response.json() as Array<Record<string, unknown>>;
