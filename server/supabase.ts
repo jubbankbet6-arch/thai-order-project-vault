@@ -131,6 +131,9 @@ const itemSelect = [
   "telegram_chat_id", "telegram_message", "telegram_copy_text", "clean_text", "single_cleaned_block", "telegram_body",
 ].join(",");
 
+const recentOrderCache = new Map<string, { expiresAt: number; value: LiveOrder[] }>();
+const ORDER_CACHE_TTL_MS = 30_000;
+
 function config() {
   const baseUrl = process.env.SUPABASE_URL?.replace(/\/$/, "");
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -245,9 +248,18 @@ function normalizeOrder(row: Record<string, unknown>, items: LiveOrderItem[]): L
   };
 }
 
+async function getRowsWithFallback<T>(preferredTable: string, fallbackTable: string, select: string, limit: number) {
+  try {
+    return await getRows<T>(preferredTable, select, limit);
+  } catch (error) {
+    if (!/404|42P01|relation|does not exist/i.test(String(error))) throw error;
+    return getRows<T>(fallbackTable, select, limit);
+  }
+}
+
 export async function fetchLiveOrders(search?: string) {
   const [rawOrders, rawItems] = await Promise.all([
-    getRows<Record<string, unknown>>("bb_order", orderSelect, 1000),
+    getRowsWithFallback<Record<string, unknown>>("bb_orders", "bb_order", orderSelect, 1000),
     getRows<Record<string, unknown>>("bb_order_items_fix", itemSelect, 3000),
   ]);
   const items = rawItems.map(normalizeItem);
@@ -312,6 +324,33 @@ export function getLiveOrderStats(orders: LiveOrder[]): LiveOrderStats {
 export async function fetchLiveOrder(orderNumber: string) {
   const orders = await fetchLiveOrders(orderNumber);
   return orders.find(order => order.order_number === orderNumber) ?? null;
+}
+
+export async function fetchOrdersForThread(pageId: string, threadId: string): Promise<LiveOrder[]> {
+  const cacheKey = `${pageId}::${threadId}`;
+  const cached = recentOrderCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  const { baseUrl, key } = config();
+  const request = async (table: string) => {
+    const url = new URL(`${baseUrl}/rest/v1/${table}`);
+    url.searchParams.set("select", orderSelect);
+    url.searchParams.set("page_id", `eq.${pageId}`);
+    url.searchParams.set("thread_id", `eq.${threadId}`);
+    url.searchParams.set("order", "created_at.desc");
+    url.searchParams.set("limit", "20");
+    return fetch(url, { headers: { apikey: key, Authorization: `Bearer ${key}` } });
+  };
+  let response = await request("bb_orders");
+  if (!response.ok && /404|42P01|relation|does not exist/i.test(await response.text())) response = await request("bb_order");
+  if (!response.ok) throw new Error(`Supabase order thread lookup returned HTTP ${response.status}`);
+  const rows = await response.json() as Array<Record<string, unknown>>;
+  const result = rows.map(row => normalizeOrder(row, [])).sort(sortNewest);
+  recentOrderCache.set(cacheKey, { expiresAt: Date.now() + ORDER_CACHE_TTL_MS, value: result });
+  return result;
+}
+
+export function clearRecentOrderCache() {
+  recentOrderCache.clear();
 }
 
 export async function fetchLiveProductMappings(): Promise<LiveProductMapping[]> {

@@ -21,7 +21,7 @@ import {
   createProductAlias,
   updateProductAlias,
 } from "./db";
-import { fetchExternalChatMessages, fetchLiveOrder, fetchLiveOrders, fetchLiveProductMappings, fetchLiveThreads, getLiveOrderStats, syncProductAliasToMaster } from "./supabase";
+import { fetchExternalChatMessages, fetchLiveOrder, fetchLiveOrders, fetchOrdersForThread, fetchLiveProductMappings, fetchLiveThreads, getLiveOrderStats, syncProductAliasToMaster } from "./supabase";
 import { generateOrderSummary } from "./order-summary";
 import { verifyVaultAccessCode } from "./vault-access";
 import { sendMetaMessage } from "./meta";
@@ -97,7 +97,7 @@ export const appRouter = router({
       let mappedProduct = input.product;
       if (!mappedProduct && input.pageId && input.threadId) {
         const ordersStartedAt = performance.now();
-        const order = (await fetchLiveOrders()).find(item => item.page_id === input.pageId && String(item.thread_id ?? item.threadId ?? "") === input.threadId);
+        const order = (await fetchOrdersForThread(input.pageId, input.threadId))[0];
         const ordersMs = performance.now() - ordersStartedAt;
         const item = order?.items[0];
         mappedProduct = item?.label_display ?? item?.telegram_final_mapped ?? order?.label_display ?? undefined;
@@ -108,21 +108,22 @@ export const appRouter = router({
       const parseMs = performance.now() - parseStartedAt;
       const auditStartedAt = performance.now();
       const preAuditMs = performance.now() - startedAt;
-      await createAuditLog({ actorUserId: ctx.user.id, actorName: ctx.user.name, action: "order_summary_created", entityType: "order_draft", entityId: summary.orderNumber, metadata: { hasCustomer: summary.customerName !== "ไม่ระบุชื่อ", hasPhone: Boolean(summary.phone), hasAddress: Boolean(summary.address), hasProduct: summary.product !== "ไม่ระบุสินค้า", hasCod: summary.cod !== "ไม่ระบุ" } });
       const auditMs = performance.now() - auditStartedAt;
       const total = performance.now() - startedAt;
+      await createAuditLog({ actorUserId: ctx.user.id, actorName: ctx.user.name, action: "order_summary_created", entityType: "order_draft", entityId: summary.orderNumber, pageId: input.pageId, threadId: input.threadId, metadata: { hasCustomer: summary.customerName !== "ไม่ระบุชื่อ", hasPhone: Boolean(summary.phone), hasAddress: Boolean(summary.address), hasProduct: summary.product !== "ไม่ระบุสินค้า", hasCod: summary.cod !== "ไม่ระบุ", timingMs: { total: Math.round(total), parse: Math.round(parseMs), dataLookup: Math.round(Math.max(preAuditMs - parseMs, 0)), audit: Math.round(auditMs) } } });
       console.info(`[NIGHTOPS] order-summary total ${Math.round(total)}ms (pre-audit ${Math.round(preAuditMs)}ms, parse ${Math.round(parseMs)}ms, audit ${Math.round(auditMs)}ms)`);
       return { ...summary, timingMs: { total: Math.round(total), parse: Math.round(parseMs), dataLookup: Math.round(Math.max(preAuditMs - parseMs, 0)), audit: Math.round(auditMs) } };
+    }),
+    summaryTimings: adminProcedure.input(z.object({ limit: z.number().int().min(1).max(100).optional() }).optional()).query(async ({ input }) => {
+      const rows = await listAuditLogs(input?.limit ?? 20, "order_summary_created");
+      return rows.map(row => ({ id: row.id, orderNumber: row.entityId, pageId: row.pageId, threadId: row.threadId, createdAt: row.createdAt, metadata: row.metadataJson ? JSON.parse(row.metadataJson) : {} }));
     }),
     live: protectedProcedure.input(z.object({ search: z.string().optional() }).optional()).query(async ({ input }) => {
       const orders = await fetchLiveOrders(input?.search);
       return { orders, stats: getLiveOrderStats(orders), source: ["bb_order", "bb_order_items_fix"] as const, fetchedAt: new Date().toISOString() };
     }),
     liveDetail: protectedProcedure.input(z.object({ orderNumber: z.string().trim().min(1) })).query(({ input }) => fetchLiveOrder(input.orderNumber)),
-    forThread: protectedProcedure.input(z.object({ pageId: z.string().min(1), threadId: z.string().min(1) })).query(async ({ input }) => {
-      const orders = await fetchLiveOrders();
-      return orders.filter(order => String(order.page_id ?? "") === input.pageId && String(order.thread_id ?? order.threadId ?? "") === input.threadId);
-    }),
+    forThread: protectedProcedure.input(z.object({ pageId: z.string().min(1), threadId: z.string().min(1) })).query(({ input }) => fetchOrdersForThread(input.pageId, input.threadId)),
     threads: protectedProcedure.input(z.object({ search: z.string().optional() }).optional()).query(({ input }) => fetchLiveThreads(input?.search)),
   }),
   productAliases: router({

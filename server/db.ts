@@ -10,6 +10,7 @@ import {
   auditLogs,
   chatMessages,
   productAliases,
+  ProductAlias,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -274,22 +275,29 @@ export async function createAuditLog(input: {
   });
 }
 
-export async function listAuditLogs(limit = 100) {
+export async function listAuditLogs(limit = 100, action?: string) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).limit(limit);
+  return db.select().from(auditLogs).where(action ? eq(auditLogs.action, action) : undefined).orderBy(desc(auditLogs.createdAt)).limit(limit);
 }
 
-export async function listProductAliases(ownerId: number) {
+const aliasCache = new Map<number, { expiresAt: number; value: ProductAlias[] }>();
+
+export async function listProductAliases(ownerId: number): Promise<ProductAlias[]> {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(productAliases).where(eq(productAliases.ownerId, ownerId)).orderBy(desc(productAliases.updatedAt));
+  const cached = aliasCache.get(ownerId);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  const value = await db.select().from(productAliases).where(eq(productAliases.ownerId, ownerId)).orderBy(desc(productAliases.updatedAt));
+  aliasCache.set(ownerId, { expiresAt: Date.now() + 60_000, value });
+  return value;
 }
 
 export async function createProductAlias(ownerId: number, input: { alias: string; canonicalSku: string; canonicalLabel: string }) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
   await db.insert(productAliases).values({ ownerId, alias: input.alias, canonicalSku: input.canonicalSku, canonicalLabel: input.canonicalLabel });
+  aliasCache.delete(ownerId);
   return listProductAliases(ownerId);
 }
 
@@ -297,5 +305,6 @@ export async function updateProductAlias(ownerId: number, id: number, input: { a
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
   await db.update(productAliases).set(input).where(and(eq(productAliases.id, id), eq(productAliases.ownerId, ownerId)));
+  aliasCache.delete(ownerId);
   return listProductAliases(ownerId);
 }
