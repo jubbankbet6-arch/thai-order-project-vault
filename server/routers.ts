@@ -106,6 +106,10 @@ export const appRouter = router({
       return { orders, stats: getLiveOrderStats(orders), source: ["bb_order", "bb_order_items_fix"] as const, fetchedAt: new Date().toISOString() };
     }),
     liveDetail: protectedProcedure.input(z.object({ orderNumber: z.string().trim().min(1) })).query(({ input }) => fetchLiveOrder(input.orderNumber)),
+    forThread: protectedProcedure.input(z.object({ pageId: z.string().min(1), threadId: z.string().min(1) })).query(async ({ input }) => {
+      const orders = await fetchLiveOrders();
+      return orders.filter(order => String(order.page_id ?? "") === input.pageId && String(order.thread_id ?? order.threadId ?? "") === input.threadId);
+    }),
     threads: protectedProcedure.input(z.object({ search: z.string().optional() }).optional()).query(({ input }) => fetchLiveThreads(input?.search)),
   }),
   productAliases: router({

@@ -82,6 +82,7 @@ export type LiveThread = {
   messageCount: number;
   orders: LiveOrder[];
   chatTimeline: string[];
+  searchText: string;
 };
 
 export type LiveProductMapping = {
@@ -394,6 +395,7 @@ export async function fetchLiveThreads(search?: string) {
       sentCount: 0,
       messageCount: 0,
       orders: [],
+      searchText: "",
     };
     if (!thread.customerName && message.customerName) thread.customerName = message.customerName;
     if ((Date.parse(messageAt) || 0) > (Date.parse(String(thread.latestAt ?? "")) || 0)) {
@@ -402,6 +404,7 @@ export async function fetchLiveThreads(search?: string) {
     }
     if (message.direction === "outbound") thread.sentCount += 1;
     thread.messageCount += 1;
+    thread.searchText = `${thread.searchText} ${message.text ?? ""}`.trim();
     groups.set(key, thread);
   }
   return Array.from(groups.values()).sort((a, b) => (Date.parse(String(b.latestAt ?? "")) || 0) - (Date.parse(String(a.latestAt ?? "")) || 0));
