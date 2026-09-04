@@ -141,6 +141,7 @@ const orderSelect = [
   "display_for_packer", "telegram_status", "order_status", "audit_status", "audit_flags",
   "cod_check_status", "is_ready_to_pack", "telegram_message", "telegram_copy_text", "telegram_chat_id", "clean_text", "single_cleaned_block", "telegram_body", "items_json", "items_text", "items_count", "total_quantity", "packer_copy_text", "source_system",
 ].join(",");
+const legacyOrderSelect = orderSelect.split(",").filter(field => !["items_json", "items_text", "items_count", "total_quantity", "packer_copy_text", "source_system"].includes(field)).join(",");
 
 /* legacy item select intentionally removed: bb_orders is canonical */
 const itemSelect = "";
@@ -295,7 +296,14 @@ async function getRowsWithFallback<T>(preferredTable: string, fallbackTable: str
 }
 
 export async function fetchLiveOrders(search?: string) {
-  const rawOrders = await getRows<Record<string, unknown>>("bb_orders", orderSelect, 3000);
+  let rawOrders: Array<Record<string, unknown>>;
+  try {
+    rawOrders = await getRows<Record<string, unknown>>("bb_orders", orderSelect, 3000);
+  } catch (error) {
+    if (!/400|column|does not exist/i.test(String(error))) throw error;
+    console.warn("[NIGHTOPS] bb_orders is missing migration columns; using compatible select");
+    rawOrders = await getRows<Record<string, unknown>>("bb_orders", legacyOrderSelect, 3000);
+  }
   const rawOrderByKey = new Map<string, Record<string, unknown>>();
   for (const row of rawOrders) {
     const key = text(row.order_number) ?? text(row.upsert_key) ?? `id:${text(row.id)}`;
@@ -346,9 +354,9 @@ export async function fetchOrdersForThread(pageId: string, threadId: string): Pr
     recentOrderCache.set(cacheKey, { expiresAt: Date.now() + ORDER_CACHE_TTL_MS, value: result });
     return result;
   }
-  const request = async (table: string) => {
+  const request = async (table: string, select = orderSelect) => {
     const url = new URL(`${baseUrl}/rest/v1/${table}`);
-    url.searchParams.set("select", orderSelect);
+    url.searchParams.set("select", select);
     url.searchParams.set("page_id", `eq.${pageId}`);
     url.searchParams.set("thread_id", `eq.${threadId}`);
     url.searchParams.set("order", "created_at.desc");
@@ -356,7 +364,8 @@ export async function fetchOrdersForThread(pageId: string, threadId: string): Pr
     return fetch(url, { headers: { apikey: key, Authorization: `Bearer ${key}` } });
   };
   let response = await request("bb_orders");
-  if (!response.ok && /404|42P01|relation|does not exist/i.test(await response.text())) response = await request("bb_order");
+  if (!response.ok && /400|column|does not exist/i.test(await response.clone().text())) response = await request("bb_orders", legacyOrderSelect);
+  if (!response.ok && /404|42P01|relation|does not exist/i.test(await response.clone().text())) response = await request("bb_order", legacyOrderSelect);
   if (!response.ok) throw new Error(`Supabase order thread lookup returned HTTP ${response.status}`);
   const rows = await response.json() as Array<Record<string, unknown>>;
   const result = rows.map(row => normalizeOrder(row, itemLinesFromOrder(row))).sort(sortNewest);
