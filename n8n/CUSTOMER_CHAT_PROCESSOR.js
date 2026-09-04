@@ -13,7 +13,7 @@ for (const item of $input.all()) {
   // - new: record_type="message"
   // - older raw node: message_id/message_text without record_type
   const isMessage = row.record_type === "message"
-    || Boolean(row.message_id || row.source_message_id || row.message_text);
+    || Boolean(row.message_id || row.source_message_id || row.message_text || row.message || (Array.isArray(row.attachments) && row.attachments.length) || (Array.isArray(row.image_urls) && row.image_urls.length));
   if (!isMessage) continue;
 
   const pageId = String(row.page_id ?? row.pageId ?? "");
@@ -29,14 +29,14 @@ for (const item of $input.all()) {
     || row.message_is_echo === true
     || row.is_echo === true
     || (fromId !== "" && pageId !== "" && fromId === pageId)
-    || (pageName !== "" && fromName !== "" && (fromName === pageName || fromName.includes(pageName) || pageName.includes(fromName)));
+    ;
   if (isPage) continue;
 
   const conversationKey = String(row.conversation_key ?? row.conversation_id ?? row.thread_id ?? row.threadId ?? "");
   const messageId = String(row.source_message_id ?? row.message_id ?? "");
   const text = row.message_text ?? row.message ?? row.text ?? "";
   const occurredAt = row.occurred_at ?? row.message_created_time ?? row.created_time ?? null;
-  const dedupeKey = String(row.dedupe_key ?? `meta:${pageId}:${conversationKey}:${messageId || occurredAt || text}`);
+  const dedupeKey = messageId ? `meta:${messageId}` : String(row.dedupe_key ?? `meta:${pageId}:${conversationKey}:${occurredAt}:${text}`);
   if (seen.has(dedupeKey)) continue;
   seen.add(dedupeKey);
 

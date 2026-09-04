@@ -64,12 +64,9 @@ for (const item of $input.all()) {
       // Do not use from.email: Meta can expose a customer profile as
       // <id>@facebook.com too. Use explicit echo/ID signals and a normalized
       // configured page-name match instead.
-      const normalizeName = (value) => String(value ?? "").replace(/[\u{1F000}-\u{1FAFF}\u{2000}-\u{206F}\s]/gu, "").toLowerCase();
-      const senderName = normalizeName(message.from?.name);
-      const configuredName = normalizeName(conversationPageName);
-      const explicitPageSender = Boolean(configuredName && senderName && (senderName === configuredName || senderName.includes(configuredName) || configuredName.includes(senderName)));
+      const explicitPageSender = Boolean(conversationPageId && fromId && fromId === conversationPageId);
       const speakerHint = isEcho || (conversationPageId && fromId === conversationPageId) || explicitPageSender ? "page" : "customer";
-      const dedupeKey = ["meta", conversationPageId, conversationId, messageId || occurredAt, text.slice(0, 100)].join(":");
+      const dedupeKey = messageId ? `meta:${messageId}` : `meta:${conversationPageId}:${conversationId}:${occurredAt}:${text.slice(0, 100)}`;
 
       output.push({ json: {
         record_type: "message",
