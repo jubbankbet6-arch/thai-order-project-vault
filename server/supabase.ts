@@ -73,6 +73,7 @@ export type LiveThread = {
   pageName: string;
   pageId: string | null;
   threadId: string | null;
+  customerId: string | null;
   latestAt: string | null;
   latestOrderNumber: string;
   customerName: string | null;
@@ -389,6 +390,7 @@ export async function fetchLiveThreads(search?: string) {
       pageName: message.pageName ?? message.pageId,
       pageId: message.pageId,
       threadId: message.threadId,
+      customerId: message.senderType === "customer" ? message.senderId : null,
       latestAt: messageAt,
       latestOrderNumber: "",
       customerName: message.customerName ?? (message.senderType === "customer" ? message.senderName : null),
@@ -402,6 +404,7 @@ export async function fetchLiveThreads(search?: string) {
       searchText: "",
     };
     if (!thread.customerName && message.customerName) thread.customerName = message.customerName;
+    if (!thread.customerId && message.senderType === "customer" && message.senderId) thread.customerId = message.senderId;
     if ((Date.parse(messageAt) || 0) > (Date.parse(String(thread.latestAt ?? "")) || 0)) {
       thread.latestAt = messageAt;
       thread.preview = message.text ?? "มีรูปภาพแนบ";

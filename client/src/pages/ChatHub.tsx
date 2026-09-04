@@ -78,6 +78,7 @@ export default function ChatHub() {
   const selected = filteredThreads.find(thread => thread.key === selectedKey) ?? filteredThreads[0];
   const selectedPageId = selected?.pageId ?? selected?.orders[0]?.page_id ?? "";
   const selectedThreadId = selected?.threadId ?? "";
+  const selectedCustomerId = selected?.customerId ?? "";
   const messagesQuery = trpc.chat.messages.useQuery({ pageId: selectedPageId, threadId: selectedThreadId }, { enabled: Boolean(selectedPageId && selectedThreadId), refetchInterval: 10_000 });
   const linkedOrdersQuery = trpc.orders.forThread.useQuery({ pageId: selectedPageId, threadId: selectedThreadId }, { enabled: Boolean(selectedPageId && selectedThreadId), refetchInterval: 60_000 });
   const totalMessages = useMemo(() => threads.reduce((total, thread) => total + thread.messageCount, 0), [threads]);
@@ -94,8 +95,8 @@ export default function ChatHub() {
   }, [selectedKey, messagesQuery.data?.length, messageFilter]);
 
   const sendCurrentReply = () => {
-    if (!selectedPageId || !selectedThreadId || (!replyText.trim() && !replyImageUrl.trim())) return;
-    sendReply.mutate({ pageId: selectedPageId, threadId: selectedThreadId, recipientId: selectedThreadId, text: replyText.trim() || undefined, imageUrl: replyImageUrl.trim() || undefined });
+    if (!selectedPageId || !selectedThreadId || !selectedCustomerId || (!replyText.trim() && !replyImageUrl.trim())) return;
+    sendReply.mutate({ pageId: selectedPageId, threadId: selectedThreadId, recipientId: selectedCustomerId, text: replyText.trim() || undefined, imageUrl: replyImageUrl.trim() || undefined });
   };
   const copySummary = async () => {
     if (!replyText.trim()) return;
@@ -110,7 +111,7 @@ export default function ChatHub() {
     <div className="mb-2 flex flex-wrap gap-1.5">
       {quickReplies.map(reply => <button key={reply} type="button" onClick={() => setReplyText(reply)} className="rounded-lg border border-fuchsia-400/15 bg-fuchsia-500/[0.06] px-2 py-1 text-[10px] text-fuchsia-200/75 transition hover:bg-fuchsia-500/20 hover:text-fuchsia-100">{reply}</button>)}
     </div>
-    <div className="flex gap-2"><Input value={replyText} onChange={event => setReplyText(event.target.value)} placeholder="พิมพ์ตอบลูกค้า…" className="border-violet-500/15 bg-black/25 text-white placeholder:text-violet-100/25" onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendCurrentReply(); } }} /><Button aria-label="ส่งข้อความ" disabled={sendReply.isPending || (!replyText.trim() && !replyImageUrl.trim())} onClick={sendCurrentReply} className="shrink-0 rounded-xl bg-gradient-to-r from-fuchsia-600 to-violet-600"><Send className="h-4 w-4" /></Button></div>
+    <div className="flex gap-2"><Input value={replyText} onChange={event => setReplyText(event.target.value)} placeholder={selectedCustomerId ? "พิมพ์ตอบลูกค้า…" : "ไม่พบ Customer PSID ของห้องนี้"} disabled={!selectedCustomerId} className="border-violet-500/15 bg-black/25 text-white placeholder:text-violet-100/25" onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendCurrentReply(); } }} /><Button aria-label="ส่งข้อความ" disabled={sendReply.isPending || !selectedCustomerId || (!replyText.trim() && !replyImageUrl.trim())} onClick={sendCurrentReply} className="shrink-0 rounded-xl bg-gradient-to-r from-fuchsia-600 to-violet-600"><Send className="h-4 w-4" /></Button></div>
     <div className="mt-1 flex items-center gap-2"><ImagePlus className="h-3.5 w-3.5 text-violet-100/35" /><Input value={replyImageUrl} onChange={event => setReplyImageUrl(event.target.value)} placeholder="URL รูปภาพ (ถ้ามี)" className="h-7 border-violet-500/10 bg-black/20 text-xs text-white placeholder:text-violet-100/20" /><span className="whitespace-nowrap text-[10px] text-violet-100/25">Meta API</span></div>
     {sendReply.isError ? <p className="mt-2 text-[11px] text-amber-300">{sendReply.error.message.includes("No Meta page token") ? "เพจนี้ยังไม่ได้ตั้งค่า Page Access Token ในเซิร์ฟเวอร์" : `ส่งไม่สำเร็จ: ${sendReply.error.message}`}</p> : null}
   </div>;
