@@ -149,7 +149,10 @@ async function getRows<T>(table: string, select: string, limit: number) {
   const response = await fetch(url, {
     headers: { apikey: key, Authorization: `Bearer ${key}` },
   });
-  if (!response.ok) throw new Error(`Supabase ${table} returned HTTP ${response.status}`);
+  if (!response.ok) {
+    const details = (await response.text()).slice(0, 300);
+    throw new Error(`Supabase ${table} returned HTTP ${response.status}${details ? `: ${details}` : ""}`);
+  }
   return response.json() as Promise<T[]>;
 }
 
@@ -252,8 +255,14 @@ async function getRowsWithFallback<T>(preferredTable: string, fallbackTable: str
   try {
     return await getRows<T>(preferredTable, select, limit);
   } catch (error) {
-    if (!/404|42P01|relation|does not exist/i.test(String(error))) throw error;
-    return getRows<T>(fallbackTable, select, limit);
+    // During the migration bb_orders may exist with an older column shape.
+    // Retry the established bb_order table for both missing-table and HTTP 400 schema errors.
+    if (!/400|404|42P01|relation|column|does not exist/i.test(String(error))) throw error;
+    try {
+      return await getRows<T>(fallbackTable, select, limit);
+    } catch (fallbackError) {
+      throw new Error(`${String(error)}; fallback ${String(fallbackError)}`);
+    }
   }
 }
 
