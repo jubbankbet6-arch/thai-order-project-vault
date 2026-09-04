@@ -296,7 +296,14 @@ export async function listProductAliases(ownerId: number): Promise<ProductAlias[
 export async function createProductAlias(ownerId: number, input: { alias: string; canonicalSku: string; canonicalLabel: string }) {
   const db = await getDb();
   if (!db) throw new Error("Database is not available");
-  await db.insert(productAliases).values({ ownerId, alias: input.alias, canonicalSku: input.canonicalSku, canonicalLabel: input.canonicalLabel });
+  const cleanAlias = input.alias.trim();
+  const existingRows = await db.select().from(productAliases).where(eq(productAliases.ownerId, ownerId));
+  const existing = existingRows.find(row => row.alias.trim().toLocaleLowerCase() === cleanAlias.toLocaleLowerCase());
+  if (existing) {
+    await db.update(productAliases).set({ alias: cleanAlias, canonicalSku: input.canonicalSku, canonicalLabel: input.canonicalLabel, isActive: true, updatedAt: new Date() }).where(and(eq(productAliases.id, existing.id), eq(productAliases.ownerId, ownerId)));
+  } else {
+    await db.insert(productAliases).values({ ownerId, alias: cleanAlias, canonicalSku: input.canonicalSku, canonicalLabel: input.canonicalLabel });
+  }
   aliasCache.delete(ownerId);
   return listProductAliases(ownerId);
 }
