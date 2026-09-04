@@ -12,6 +12,7 @@ import ProductAliases from "@/pages/ProductAliases";
 import OrderPerformance from "@/pages/OrderPerformance";
 import StockRoom from "@/pages/StockRoom";
 import MappingDashboard from "@/pages/MappingDashboard";
+import OrderBuckets from "@/pages/OrderBuckets";
 
 function Router() {
   return (
@@ -33,6 +34,9 @@ function Router() {
       </Route>
       <Route path="/mapping-dashboard">
         <DashboardLayout><MappingDashboard /></DashboardLayout>
+      </Route>
+      <Route path="/order-buckets">
+        <DashboardLayout><OrderBuckets /></DashboardLayout>
       </Route>
       <Route path="/">
         <DashboardLayout><Home /></DashboardLayout>

@@ -30,6 +30,7 @@ import { Button } from "./ui/button";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Order Control", path: "/orders" },
+  { icon: Boxes, label: "แยก 1/2/3 คอต", path: "/order-buckets" },
   { icon: MessageCircle, label: "รวมแชทเพจ", path: "/chats" },
   { icon: Activity, label: "ประสิทธิภาพดูดออเดอร์", path: "/order-performance" },
   { icon: Boxes, label: "เช็กสต๊อก / เติมสต๊อก", path: "/stock-room" },
