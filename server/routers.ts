@@ -90,17 +90,29 @@ export const appRouter = router({
   }),
   orders: router({
     generateSummary: adminProcedure.input(z.object({ rawText: z.string().max(20_000), customerName: z.string().max(180).optional(), product: z.string().max(500).optional(), cod: z.string().max(40).optional(), pageId: z.string().optional(), threadId: z.string().optional() })).mutation(async ({ ctx, input }) => {
+      const startedAt = performance.now();
+      const aliasesStartedAt = performance.now();
       const aliases = await listProductAliases(ctx.user.id);
+      const aliasesMs = performance.now() - aliasesStartedAt;
       let mappedProduct = input.product;
       if (!mappedProduct && input.pageId && input.threadId) {
-        const thread = (await fetchLiveThreads()).find(item => item.pageId === input.pageId && item.threadId === input.threadId);
-        const order = thread?.orders[0];
+        const ordersStartedAt = performance.now();
+        const order = (await fetchLiveOrders()).find(item => item.page_id === input.pageId && String(item.thread_id ?? item.threadId ?? "") === input.threadId);
+        const ordersMs = performance.now() - ordersStartedAt;
         const item = order?.items[0];
         mappedProduct = item?.label_display ?? item?.telegram_final_mapped ?? order?.label_display ?? undefined;
+        console.info(`[NIGHTOPS] order-summary data lookup ${Math.round(ordersMs)}ms (aliases ${Math.round(aliasesMs)}ms)`);
       }
+      const parseStartedAt = performance.now();
       const summary = generateOrderSummary({ ...input, product: mappedProduct, productAliases: aliases });
+      const parseMs = performance.now() - parseStartedAt;
+      const auditStartedAt = performance.now();
+      const preAuditMs = performance.now() - startedAt;
       await createAuditLog({ actorUserId: ctx.user.id, actorName: ctx.user.name, action: "order_summary_created", entityType: "order_draft", entityId: summary.orderNumber, metadata: { hasCustomer: summary.customerName !== "ไม่ระบุชื่อ", hasPhone: Boolean(summary.phone), hasAddress: Boolean(summary.address), hasProduct: summary.product !== "ไม่ระบุสินค้า", hasCod: summary.cod !== "ไม่ระบุ" } });
-      return summary;
+      const auditMs = performance.now() - auditStartedAt;
+      const total = performance.now() - startedAt;
+      console.info(`[NIGHTOPS] order-summary total ${Math.round(total)}ms (pre-audit ${Math.round(preAuditMs)}ms, parse ${Math.round(parseMs)}ms, audit ${Math.round(auditMs)}ms)`);
+      return { ...summary, timingMs: { total: Math.round(total), parse: Math.round(parseMs), dataLookup: Math.round(Math.max(preAuditMs - parseMs, 0)), audit: Math.round(auditMs) } };
     }),
     live: protectedProcedure.input(z.object({ search: z.string().optional() }).optional()).query(async ({ input }) => {
       const orders = await fetchLiveOrders(input?.search);

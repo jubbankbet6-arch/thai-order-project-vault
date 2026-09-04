@@ -15,6 +15,7 @@ export type OrderSummary = {
   product: string;
   cod: string;
   copyText: string;
+  timingMs?: { total: number; parse: number; dataLookup: number; audit: number };
 };
 
 function clean(value: string | undefined) {
