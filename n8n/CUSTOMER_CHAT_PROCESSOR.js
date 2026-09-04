@@ -87,10 +87,13 @@ for (const item of $input.all()) {
         null,
       speaker_type: "customer",
       side: "left",
+      storage_table: "chat_customer_messages",
       message_text: text,
       message_type: r.message_type ?? "text",
       occurred_at: occurredAt,
-      synced_at: new Date().toISOString()
+      synced_at: new Date().toISOString(),
+      media_status: Array.isArray(r.image_urls) && r.image_urls.length ? "pending" : "not_required",
+      permanent_image_urls: []
     }
   });
 }

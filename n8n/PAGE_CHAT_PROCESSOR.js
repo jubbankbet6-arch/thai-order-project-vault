@@ -45,6 +45,7 @@ for (const item of $input.all()) {
     page_sender_name: fromName || pageName || null,
     speaker_type: "page",
     side: "right",
+    storage_table: "chat_page_messages",
     message_text: String(text),
     message_type: row.message_type ?? (Array.isArray(row.attachments) && row.attachments.length ? "attachment" : "text"),
     attachments_json: row.attachments_json ?? row.attachments ?? [],
@@ -56,6 +57,8 @@ for (const item of $input.all()) {
     occurred_at: occurredAt,
     source_created_at: row.message_created_time ?? row.created_time ?? null,
     synced_at: row.fetched_at ?? new Date().toISOString(),
+    media_status: Array.isArray(row.image_urls) && row.image_urls.length ? "pending" : "not_required",
+    permanent_image_urls: [],
     raw_payload: row.raw_payload ?? {
       page_id: pageId,
       conversation_id: row.conversation_id ?? conversationKey,

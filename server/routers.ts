@@ -139,10 +139,13 @@ export const appRouter = router({
         throw error;
       }
     }),
-    uploadImage: adminProcedure.input(z.object({ fileName: z.string().min(1).max(180), contentType: z.string().regex(/^image\/(jpeg|png|gif|webp)$/i), base64: z.string().min(1).max(8_000_000) })).mutation(async ({ ctx, input }) => {
+    uploadImage: adminProcedure.input(z.object({ fileName: z.string().min(1).max(512), contentType: z.string().regex(/^image\/(jpeg|png|gif|webp)$/i), base64: z.string().min(1).max(8_000_000) })).mutation(async ({ ctx, input }) => {
       const bytes = Buffer.from(input.base64.replace(/^data:[^;]+;base64,/, ""), "base64");
       if (bytes.length > 6_000_000) throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: "รูปภาพต้องมีขนาดไม่เกิน 6 MB" });
-      const uploaded = await storagePut(`chat-uploads/${ctx.user.id}/${input.fileName.replace(/[^a-zA-Z0-9._-]/g, "_")}`, bytes, input.contentType);
+      const cleanedName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const extension = cleanedName.includes(".") ? cleanedName.slice(cleanedName.lastIndexOf(".")).slice(0, 12) : ".img";
+      const stem = cleanedName.replace(/\.[^.]*$/, "").slice(0, 160) || "image";
+      const uploaded = await storagePut(`chat-uploads/${ctx.user.id}/${stem}${extension}`, bytes, input.contentType);
       return uploaded;
     }),
     deliveryHealth: adminProcedure.query(async () => {
