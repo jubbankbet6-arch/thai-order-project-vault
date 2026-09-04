@@ -26,6 +26,10 @@ for (const item of $input.all()) {
     ""
   );
 
+  // A customer row must identify its sender. If Meta/n8n dropped `from.id`,
+  // do not turn a page/system greeting into a fake customer message.
+  if (!fromId) continue;
+
   const messageId = String(
     r.source_message_id ??
     r.message_id ??
