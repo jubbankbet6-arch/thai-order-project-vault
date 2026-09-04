@@ -33,6 +33,7 @@ const menuItems = [
   { icon: MessageCircle, label: "รวมแชทเพจ", path: "/chats" },
   { icon: Activity, label: "ประสิทธิภาพดูดออเดอร์", path: "/order-performance" },
   { icon: Boxes, label: "เช็กสต๊อก / เติมสต๊อก", path: "/stock-room" },
+  { icon: Tags, label: "Dashboard Mapping", path: "/mapping-dashboard" },
   { icon: Tags, label: "Alias สินค้า", path: "/aliases" },
   { icon: Database, label: "คลังโปรเจกต์", path: "/" },
 ];
@@ -78,6 +79,7 @@ function DashboardLayoutContent({ children, setSidebarWidth }: DashboardLayoutCo
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const threadsQuery = trpc.orders.threads.useQuery(undefined, { refetchInterval: 15_000 });
+  const deliveryQuery = trpc.chat.deliveryHealth.useQuery(undefined, { refetchInterval: 15_000, enabled: user?.role === "admin" });
   const unreadThreads = (threadsQuery.data ?? []).filter(thread => thread.unread);
   const lastNotificationKeyRef = useRef("");
   const activeMenuItem = menuItems.find(item => item.path === location);
@@ -129,6 +131,6 @@ function DashboardLayoutContent({ children, setSidebarWidth }: DashboardLayoutCo
       </Sidebar>
       <div className={`absolute right-0 top-0 h-full w-1 cursor-col-resize hover:bg-primary/20 ${isCollapsed ? "hidden" : ""}`} style={{ zIndex: 50 }} onMouseDown={() => !isCollapsed && setIsResizing(true)} />
     </div>
-    <SidebarInset className="bg-[#09070d]">{isMobile && <div className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-violet-500/10 bg-[#0d0a12]/95 px-2 backdrop-blur"><div className="flex items-center gap-2"><SidebarTrigger className="h-9 w-9 rounded-lg text-violet-100 hover:bg-violet-500/10" /><span className="text-violet-50">{activeMenuItem?.label ?? "เมนู"}</span></div></div>}<main className="flex-1 p-4">{children}</main></SidebarInset>
+    <SidebarInset className="bg-[#09070d]">{isMobile && <div className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-violet-500/10 bg-[#0d0a12]/95 px-2 backdrop-blur"><div className="flex items-center gap-2"><SidebarTrigger className="h-9 w-9 rounded-lg text-violet-100 hover:bg-violet-500/10" /><span className="text-violet-50">{activeMenuItem?.label ?? "เมนู"}</span></div></div>}<div className="mx-4 mt-3 flex flex-wrap items-center gap-2 rounded-2xl border border-violet-500/15 bg-[#100c19] px-3 py-2 text-[11px] text-violet-100/60"><button type="button" onClick={() => setLocation("/chats")} className="inline-flex items-center gap-1.5 text-red-200 hover:text-red-100"><Bell className="h-3.5 w-3.5" />{unreadThreads.length ? `ลูกค้าทักใหม่ ${unreadThreads.length} ห้อง` : "ไม่มีข้อความใหม่"}</button><span className="text-violet-100/20">·</span><span className={deliveryQuery.data?.failed.length ? "text-red-300" : "text-emerald-300"}>Meta API: {deliveryQuery.data?.failed.length ? `มีส่งไม่สำเร็จ ${deliveryQuery.data.failed.length}` : "พร้อมใช้งาน"}</span><span className="text-violet-100/35">ส่งแล้ว {deliveryQuery.data?.sent.length ?? 0}</span><span className="ml-auto text-violet-100/30">Live 15s</span></div><main className="flex-1 p-4">{children}</main></SidebarInset>
   </>;
 }

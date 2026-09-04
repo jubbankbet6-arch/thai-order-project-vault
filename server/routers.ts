@@ -139,6 +139,11 @@ export const appRouter = router({
   stock: router({
     products: protectedProcedure.query(() => fetchStockProducts()),
     warnings: protectedProcedure.query(() => fetchStockWarnings()),
+    mappingSummary: protectedProcedure.query(async () => {
+      const [products, warnings] = await Promise.all([fetchStockProducts(), fetchStockWarnings()]);
+      const mapped = products.filter(item => Boolean(item.aliases?.trim()));
+      return { total: products.length, mapped: mapped.length, missingAlias: products.length - mapped.length, duplicateSku: warnings.filter(item => item.kind === "duplicate_sku").length, missingSku: warnings.filter(item => item.kind === "missing_sku").length, products, warnings, checkedAt: new Date().toISOString() };
+    }),
     update: adminProcedure.input(z.object({ id: z.number().int().positive(), stockQty: z.number().min(0).optional(), stockStatus: z.string().trim().max(80).optional(), labelDisplay: z.string().trim().max(255).optional(), unitPrice: z.number().min(0).optional() })).mutation(({ input }) => updateStockProduct(input.id, input)),
     updateAlias: adminProcedure.input(z.object({ sku: z.string().trim().min(1).max(120), alias: z.string().trim().max(2000) })).mutation(({ input }) => updateProductMapAlias(input.sku, input.alias)),
   }),

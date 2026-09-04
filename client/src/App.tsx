@@ -11,6 +11,7 @@ import ChatHub from "./pages/ChatHub";
 import ProductAliases from "@/pages/ProductAliases";
 import OrderPerformance from "@/pages/OrderPerformance";
 import StockRoom from "@/pages/StockRoom";
+import MappingDashboard from "@/pages/MappingDashboard";
 
 function Router() {
   return (
@@ -29,6 +30,9 @@ function Router() {
       </Route>
       <Route path="/stock-room">
         <DashboardLayout><StockRoom /></DashboardLayout>
+      </Route>
+      <Route path="/mapping-dashboard">
+        <DashboardLayout><MappingDashboard /></DashboardLayout>
       </Route>
       <Route path="/">
         <DashboardLayout><Home /></DashboardLayout>
