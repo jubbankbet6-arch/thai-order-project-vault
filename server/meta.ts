@@ -42,23 +42,27 @@ export function verifyMetaSignature(rawBody: string, signature: string | undefin
 export async function sendMetaMessage(input: { pageId: string; recipientId: string; text?: string; imageUrl?: string; stickerId?: string }) {
   const accessToken = await pageToken(input.pageId);
   if (!accessToken) throw new Error(`No Meta page token configured for page ${input.pageId}`);
-  if (!input.text?.trim() && !input.imageUrl && !input.stickerId) throw new Error("Message text, image, or sticker is required");
-  const message: Record<string, unknown> = {};
-  if (input.text?.trim()) message.text = input.text.trim();
-  if (input.imageUrl) message.attachment = { type: "image", payload: { url: input.imageUrl, is_reusable: false } };
-  if (input.stickerId) message.sticker_id = input.stickerId.trim();
+  const text = input.text?.trim() || "";
+  const imageUrl = input.imageUrl?.trim() || "";
+  const stickerId = input.stickerId?.trim() || "";
+  const contentCount = [Boolean(text), Boolean(imageUrl), Boolean(stickerId)].filter(Boolean).length;
+  if (contentCount === 0) throw new Error("Message text, image, or sticker is required");
+  if (contentCount > 1) throw new Error("META_PAYLOAD_CONFLICT: ส่งได้ทีละชนิดเท่านั้น กรุณาเลือกข้อความ รูปภาพ หรือสติกเกอร์อย่างใดอย่างหนึ่ง");
+  if (imageUrl && !/^https:\/\//i.test(imageUrl)) throw new Error("META_IMAGE_URL_INVALID: รูปภาพต้องเป็น HTTPS URL ที่ Meta เข้าถึงได้");
+  const message: Record<string, unknown> = text ? { text } : imageUrl ? { attachment: { type: "image", payload: { url: imageUrl, is_reusable: false } } } : { sticker_id: stickerId };
   const response = await fetch(`https://graph.facebook.com/v26.0/${encodeURIComponent(input.pageId)}/messages?access_token=${encodeURIComponent(accessToken)}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ recipient: { id: input.recipientId }, messaging_type: "RESPONSE", message }),
   });
-  const result = await response.json() as { message_id?: string; recipient_id?: string; error?: { message?: string; code?: number; error_subcode?: number } };
+  const result = await response.json() as { message_id?: string; recipient_id?: string; error?: { message?: string; code?: number; error_subcode?: number; fbtrace_id?: string } };
   if (!response.ok) {
     const message = result.error?.message || `Meta Send API returned HTTP ${response.status}`;
     if (result.error?.code === 10 || /another app|currently controlling|ควบคุมเธรด|แอพอื่นกำลังควบคุม/i.test(message)) {
       throw new Error(`META_THREAD_CONTROL_CONFLICT: ${message}`);
     }
-    throw new Error(message);
+    const diagnostics = [result.error?.code != null ? `code=${result.error.code}` : "", result.error?.error_subcode != null ? `subcode=${result.error.error_subcode}` : "", result.error?.fbtrace_id ? `trace=${result.error.fbtrace_id}` : ""].filter(Boolean).join(", ");
+    throw new Error(`META_SEND_FAILED: ${message}${diagnostics ? ` (${diagnostics})` : ""}`);
   }
   return result;
 }
