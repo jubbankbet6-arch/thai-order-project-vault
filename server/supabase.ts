@@ -99,7 +99,9 @@ export type ExternalChatMessage = {
   pageName: string | null;
   threadId: string;
   senderId: string;
+  senderName: string | null;
   senderType: "customer" | "page";
+  side: "left" | "right";
   direction: "inbound" | "outbound";
   text: string | null;
   attachmentsJson: string | null;
@@ -328,8 +330,8 @@ export async function fetchExternalChatMessages(pageId?: string, threadId?: stri
   const { baseUrl, key } = config();
   async function readTable(table: string) {
     const select = table === "chat_customer_messages"
-      ? "id,source_message_id,page_id,page_name,conversation_key,customer_id,message_text,attachments_json,occurred_at,synced_at"
-      : "id,source_message_id,page_id,page_name,conversation_key,page_sender_id,message_text,attachments_json,occurred_at,synced_at";
+      ? "id,source_message_id,page_id,page_name,conversation_key,customer_id,customer_name,message_text,attachments_json,occurred_at,synced_at"
+      : "id,source_message_id,page_id,page_name,conversation_key,page_sender_id,page_sender_name,message_text,attachments_json,occurred_at,synced_at";
     const params = new URLSearchParams({ select, order: "occurred_at.desc", limit: String(limit) });
     if (pageId) params.set("page_id", `eq.${pageId}`);
     if (threadId) params.set("conversation_key", `eq.${threadId}`);
@@ -339,13 +341,13 @@ export async function fetchExternalChatMessages(pageId?: string, threadId?: stri
   }
   try {
     const [customers, pages] = await Promise.all([readTable("chat_customer_messages"), readTable("chat_page_messages")]);
-    const rows: Array<Record<string, unknown> & { senderId: unknown; senderType: "customer" | "page"; direction: "inbound" | "outbound" }> = [
-      ...customers.map(row => ({ ...row, senderId: row.customer_id, senderType: "customer" as const, direction: "inbound" as const })),
-      ...pages.map(row => ({ ...row, senderId: row.page_sender_id ?? row.page_id, senderType: "page" as const, direction: "outbound" as const })),
+    const rows: Array<Record<string, unknown> & { senderId: unknown; senderName: unknown; senderType: "customer" | "page"; side: "left" | "right"; direction: "inbound" | "outbound" }> = [
+      ...customers.map(row => ({ ...row, senderId: row.customer_id, senderName: row.customer_name, senderType: "customer" as const, side: "left" as const, direction: "inbound" as const })),
+      ...pages.map(row => ({ ...row, senderId: row.page_sender_id ?? row.page_id, senderName: row.page_sender_name, senderType: "page" as const, side: "right" as const, direction: "outbound" as const })),
     ];
     return rows.map((row, index) => ({
       id: Number(row.id ?? index + 1), providerMessageId: text(row.source_message_id), pageId: String(row.page_id ?? ""), pageName: text(row.page_name),
-      threadId: String(row.conversation_key ?? ""), senderId: String(row.senderId ?? ""), senderType: row.senderType, direction: row.direction,
+      threadId: String(row.conversation_key ?? ""), senderId: String(row.senderId ?? ""), senderName: text(row.senderName), senderType: row.senderType, side: row.side, direction: row.direction,
       text: text(row.message_text), attachmentsJson: jsonText(row.attachments_json), occurredAt: text(row.occurred_at), createdAt: text(row.synced_at),
     })).sort((a, b) => (Date.parse(String(b.occurredAt ?? "")) || 0) - (Date.parse(String(a.occurredAt ?? "")) || 0));
   } catch (error) {
