@@ -34,7 +34,9 @@ for (const item of $input.all()) {
     output.push({ json: {
       page_index: page.page_index ?? page.pageIndex ?? page.row_number ?? null,
       page_id: pageId,
+      source_page_id: pageId,
       page_name: page.page_name ?? page.pageName ?? null,
+      source_page_name: page.page_name ?? page.pageName ?? null,
       system_status: status,
       assigned_agent: page.assigned_agent ?? page.assignedAgent ?? null,
       assigned_hashtag: page.assigned_hashtag ?? page.assigned_Hashtag ?? null,
@@ -46,7 +48,9 @@ for (const item of $input.all()) {
     output.push({ json: {
       page_index: page.page_index ?? page.pageIndex ?? page.row_number ?? null,
       page_id: pageId,
+      source_page_id: pageId,
       page_name: page.page_name ?? page.pageName ?? null,
+      source_page_name: page.page_name ?? page.pageName ?? null,
       system_status: status,
       fetched_at: now.toISOString(),
       fetch_status: "error",

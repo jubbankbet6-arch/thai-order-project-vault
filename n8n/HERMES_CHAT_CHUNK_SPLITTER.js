@@ -122,8 +122,8 @@ for (const item of $input.all()) {
   const source = item.json ?? {};
   const graph = source.facebook_response ?? source.body ?? source;
   findMessages(graph, {
-    pageId: source.page_id ?? source.pageId,
-    pageName: source.page_name ?? source.pageName,
+    pageId: source.source_page_id ?? source.page_id ?? source.pageId ?? source.page_id_inherited,
+    pageName: source.source_page_name ?? source.page_name ?? source.pageName,
     fetchedAt: source.fetched_at ?? now,
   });
 }
