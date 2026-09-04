@@ -108,6 +108,13 @@ export type StockProduct = LiveProductMapping & {
   updatedAt: string | null;
 };
 
+export type StockWarning = {
+  kind: "duplicate_sku" | "missing_sku";
+  sku: string | null;
+  label: string | null;
+  count?: number;
+};
+
 export type ExternalChatMessage = {
   id: number;
   providerMessageId: string | null;
@@ -421,6 +428,19 @@ export async function updateStockProduct(id: number, input: { stockQty?: number;
   const response = await fetch(`${baseUrl}/rest/v1/product_master?id=eq.${encodeURIComponent(String(id))}`, { method: "PATCH", headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json", Prefer: "return=representation" }, body: JSON.stringify(patch) });
   if (!response.ok) throw new Error(`Supabase product_master update returned HTTP ${response.status}: ${(await response.text()).slice(0, 300)}`);
   return fetchStockProducts();
+}
+
+export async function fetchStockWarnings(): Promise<StockWarning[]> {
+  const result = await getRows<Record<string, unknown>>("product_master", "id,sku,label_display,th_name", 5000);
+  const warnings: StockWarning[] = [];
+  const bySku = new Map<string, Array<Record<string, unknown>>>();
+  for (const row of result) {
+    const sku = String(row.sku ?? "").trim();
+    if (!sku) warnings.push({ kind: "missing_sku", sku: null, label: text(row.th_name ?? row.label_display) });
+    else bySku.set(sku, [...(bySku.get(sku) ?? []), row]);
+  }
+  bySku.forEach((rows, sku) => { if (rows.length > 1) warnings.push({ kind: "duplicate_sku", sku, label: text(rows[0]?.th_name ?? rows[0]?.label_display), count: rows.length }); });
+  return warnings;
 }
 
 export async function updateProductMapAlias(sku: string, alias: string) {
