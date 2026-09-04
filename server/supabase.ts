@@ -78,6 +78,7 @@ export type LiveThread = {
   customerName: string | null;
   preview: string;
   orderCount: number;
+  unread: boolean;
   sentCount: number;
   messageCount: number;
   orders: LiveOrder[];
@@ -343,8 +344,9 @@ export async function fetchExternalChatMessages(pageId?: string, threadId?: stri
   }
   try {
     const [customers, pages] = await Promise.all([readTable("chat_customer_messages"), readTable("chat_page_messages")]);
+    const pageNames = new Map(pages.map(row => [String(row.page_id ?? ""), text(row.page_name)]));
     const rows: Array<Record<string, unknown> & { senderId: unknown; senderName: unknown; senderType: "customer" | "page"; side: "left" | "right"; direction: "inbound" | "outbound" }> = [
-      ...customers.map(row => ({ ...row, senderId: row.customer_id, senderName: row.customer_name, customerName: row.customer_name, senderType: "customer" as const, side: "left" as const, direction: "inbound" as const })),
+      ...customers.map(row => ({ ...row, page_name: pageNames.get(String(row.page_id ?? "")) ?? row.page_name, senderId: row.customer_id, senderName: row.customer_name, customerName: row.customer_name, senderType: "customer" as const, side: "left" as const, direction: "inbound" as const })),
       ...pages.map(row => ({ ...row, senderId: row.page_sender_id ?? row.page_id, senderName: row.page_sender_name, customerName: null, senderType: "page" as const, side: "right" as const, direction: "outbound" as const })),
     ];
     return rows.map((row, index) => ({
@@ -377,6 +379,7 @@ export async function fetchLiveThreads(search?: string) {
   const externalMessages = await fetchExternalChatMessages();
   const allMessages = externalMessages;
   const groups = new Map<string, LiveThread>();
+  const latestDirections = new Map<string, { inbound: number; outbound: number }>();
   for (const message of allMessages) {
     const key = `${message.pageId}::${message.threadId}`;
     const messageAt = String(message.occurredAt ?? "");
@@ -392,6 +395,7 @@ export async function fetchLiveThreads(search?: string) {
       chatTimeline: [],
       preview: message.text ?? "มีรูปภาพแนบ",
       orderCount: 0,
+      unread: false,
       sentCount: 0,
       messageCount: 0,
       orders: [],
@@ -405,7 +409,25 @@ export async function fetchLiveThreads(search?: string) {
     if (message.direction === "outbound") thread.sentCount += 1;
     thread.messageCount += 1;
     thread.searchText = `${thread.searchText} ${message.text ?? ""}`.trim();
+    const directionState = latestDirections.get(key) ?? { inbound: 0, outbound: 0 };
+    const timestamp = Date.parse(messageAt) || 0;
+    if (message.senderType === "customer") directionState.inbound = Math.max(directionState.inbound, timestamp);
+    if (message.senderType === "page") directionState.outbound = Math.max(directionState.outbound, timestamp);
+    latestDirections.set(key, directionState);
     groups.set(key, thread);
+  }
+  groups.forEach((thread, key) => {
+    const directionState = latestDirections.get(key);
+    thread.unread = Boolean(directionState && directionState.inbound > directionState.outbound);
+  });
+  const orders = await fetchLiveOrders(search);
+  for (const order of orders) {
+    const key = `${order.page_id ?? ""}::${order.thread_id ?? order.threadId ?? ""}`;
+    const thread = groups.get(key);
+    if (!thread) continue;
+    thread.orders.push(order);
+    thread.orderCount += 1;
+    if (!thread.latestOrderNumber) thread.latestOrderNumber = order.order_number;
   }
   return Array.from(groups.values()).sort((a, b) => (Date.parse(String(b.latestAt ?? "")) || 0) - (Date.parse(String(a.latestAt ?? "")) || 0));
 }
