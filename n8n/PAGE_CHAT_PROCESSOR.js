@@ -69,9 +69,6 @@ for (const item of $input.all()) {
   } });
 }
 
-if (!output.length) {
-  return [{ json: { record_type: "sync_status", status: "no_page_messages", message_count: 0, synced_at: new Date().toISOString() } }];
-}
 return output;
 
 // Supabase destination: chat_page_messages; Upsert conflict: dedupe_key.

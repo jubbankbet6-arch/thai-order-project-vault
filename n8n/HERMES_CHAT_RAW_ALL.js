@@ -93,11 +93,8 @@ for (const item of $input.all()) {
   }
 }
 
-// Keep the n8n workflow alive without inventing a chat message. Downstream
-// processors pass this status to an IF node, whose true branch must be
-// record_type == "message" before the Supabase HTTP Upsert.
 if (!output.length) {
-  return [{ json: { record_type: "sync_status", status: "empty", message_count: 0, fetched_at: now } }];
+  return [];
 }
 
 return output;
