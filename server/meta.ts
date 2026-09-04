@@ -52,8 +52,14 @@ export async function sendMetaMessage(input: { pageId: string; recipientId: stri
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ recipient: { id: input.recipientId }, messaging_type: "RESPONSE", message }),
   });
-  const result = await response.json() as { message_id?: string; recipient_id?: string; error?: { message?: string } };
-  if (!response.ok) throw new Error(result.error?.message || `Meta Send API returned HTTP ${response.status}`);
+  const result = await response.json() as { message_id?: string; recipient_id?: string; error?: { message?: string; code?: number; error_subcode?: number } };
+  if (!response.ok) {
+    const message = result.error?.message || `Meta Send API returned HTTP ${response.status}`;
+    if (result.error?.code === 10 || /another app|currently controlling|ควบคุมเธรด|แอพอื่นกำลังควบคุม/i.test(message)) {
+      throw new Error(`META_THREAD_CONTROL_CONFLICT: ${message}`);
+    }
+    throw new Error(message);
+  }
   return result;
 }
 
