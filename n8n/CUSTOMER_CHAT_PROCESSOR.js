@@ -1,80 +1,95 @@
 // n8n Code node: 💬 CUSTOMER_CHAT_PROCESSOR
 // Mode: Run Once for All Items
 // Input: 🌌 HERMES_CHAT_RAW_ALL
-// Output: one item per customer message for chat_customer_messages.
+// Output: chat_customer_messages
 
 const output = [];
 const seen = new Set();
 
 for (const item of $input.all()) {
-  const row = item.json ?? {};
+  const r = item.json ?? {};
 
-  // Support both HERMES versions:
-  // - new: record_type="message"
-  // - older raw node: message_id/message_text without record_type
-  const isMessage = row.record_type === "message"
-    || Boolean(row.message_id || row.source_message_id || row.message_text || row.message || (Array.isArray(row.attachments) && row.attachments.length) || (Array.isArray(row.image_urls) && row.image_urls.length));
-  if (!isMessage) continue;
+  const pageId = String(r.page_id ?? r.pageId ?? "");
+  const conversationKey = String(
+    r.conversation_key ??
+    r.conversation_id ??
+    r.thread_id ??
+    r.threadId ??
+    ""
+  );
 
-  const pageId = String(row.page_id ?? row.pageId ?? "");
-  const from = row.message_from ?? row.from ?? {};
-  const fromId = String(row.message_from_id ?? row.sender_id ?? from.id ?? "");
-  const fromName = String(row.message_from_name ?? row.sender_name ?? from.name ?? "");
-  const pageName = String(row.page_name ?? row.pageName ?? "");
+  const from = r.message_from ?? r.from ?? {};
+  const fromId = String(
+    r.message_from_id ??
+    r.sender_id ??
+    from.id ??
+    ""
+  );
 
-  // Prefer explicit classification from HERMES. Keep old fallbacks so this
-  // node remains compatible with the previous raw output shape.
-  const isPage = row.speaker_hint === "page"
-    || row.message_from_is_page === true
-    || row.message_is_echo === true
-    || row.is_echo === true
-    || (fromId !== "" && pageId !== "" && fromId === pageId)
-    ;
-  if (isPage) continue;
+  const messageId = String(
+    r.source_message_id ??
+    r.message_id ??
+    ""
+  );
 
-  const conversationKey = String(row.conversation_key ?? row.conversation_id ?? row.thread_id ?? row.threadId ?? "");
-  const messageId = String(row.source_message_id ?? row.message_id ?? "");
-  const text = row.message_text ?? row.message ?? row.text ?? "";
-  const occurredAt = row.occurred_at ?? row.message_created_time ?? row.created_time ?? null;
-  const dedupeKey = messageId ? `meta:${messageId}` : String(row.dedupe_key ?? `meta:${pageId}:${conversationKey}:${occurredAt}:${text}`);
+  const text = String(
+    r.message_text ??
+    r.message ??
+    r.text ??
+    ""
+  );
+
+  // ตัดเฉพาะข้อความที่ระบุชัดเจนว่าเป็นข้อความจากเพจ
+  if (
+    r.is_echo === true ||
+    r.message_is_echo === true ||
+    (pageId && fromId && pageId === fromId)
+  ) {
+    continue;
+  }
+
+  const occurredAt =
+    r.occurred_at ??
+    r.message_created_time ??
+    r.created_time ??
+    null;
+
+  const dedupeKey = String(
+    r.dedupe_key ||
+    (
+      messageId
+        ? `meta:${pageId}:${conversationKey}:${messageId}`
+        : `meta:${pageId}:${conversationKey}:${occurredAt ?? ""}:${text}`
+    )
+  );
+
   if (seen.has(dedupeKey)) continue;
   seen.add(dedupeKey);
 
-  output.push({ json: {
-    source_message_id: messageId || null,
-    dedupe_key: dedupeKey,
-    page_id: pageId,
-    page_name: pageName || null,
-    conversation_key: conversationKey,
-    customer_id: fromId || null,
-    customer_name: fromName || null,
-    speaker_type: "customer",
-    side: "left",
-    message_text: String(text),
-    message_type: row.message_type ?? (Array.isArray(row.attachments) && row.attachments.length ? "attachment" : "text"),
-    attachments_json: row.attachments_json ?? row.attachments ?? [],
-    image_urls: row.image_urls ?? [],
-    has_image: row.has_image === true || (Array.isArray(row.image_urls) && row.image_urls.length > 0),
-    attachment_count: row.attachment_count ?? (Array.isArray(row.attachments) ? row.attachments.length : 0),
-    shares_json: row.shares_json ?? row.shares ?? null,
-    sticker_json: row.sticker_json ?? row.sticker ?? null,
-    occurred_at: occurredAt,
-    source_created_at: row.message_created_time ?? row.created_time ?? null,
-    synced_at: row.fetched_at ?? new Date().toISOString(),
-    raw_payload: row.raw_payload ?? {
-      page_id: pageId,
-      conversation_id: row.conversation_id ?? conversationKey,
-      message_id: row.message_id ?? messageId,
-      message: text,
-      from,
-      is_echo: row.message_is_echo ?? row.is_echo ?? false,
-      attachments: row.attachments ?? [],
-      shares: row.shares ?? null,
-      sticker: row.sticker ?? null,
-    },
-  } });
+  output.push({
+    json: {
+      source_message_id: messageId || null,
+      dedupe_key: dedupeKey,
+      page_id: pageId || null,
+      page_name: r.page_name ?? r.pageName ?? null,
+      conversation_key: conversationKey || null,
+      customer_id: fromId || null,
+      customer_name:
+        r.message_from_name ??
+        r.sender_name ??
+        from.name ??
+        null,
+      speaker_type: "customer",
+      side: "left",
+      message_text: text,
+      message_type: r.message_type ?? "text",
+      occurred_at: occurredAt,
+      synced_at: new Date().toISOString()
+    }
+  });
 }
 
 return output;
 
-// Supabase destination: chat_customer_messages; Upsert conflict: dedupe_key.
+// Supabase destination: chat_customer_messages
+// HTTP Upsert conflict column: dedupe_key
