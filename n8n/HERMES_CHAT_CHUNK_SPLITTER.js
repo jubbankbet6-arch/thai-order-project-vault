@@ -52,7 +52,13 @@ function findMessages(value, context = {}) {
   if (!value || typeof value !== "object") return;
 
   const candidatePageId = String(context.pageId ?? value.page_id ?? value.pageId ?? "");
-  const configPage = PAGE_BY_ID.get(candidatePageId);
+  // Graph conversation payloads commonly put the Page ID only in
+  // participants[].id. Resolve it against the dynamic Config by exact ID;
+  // never choose by participant position or name.
+  const participantPage = Array.isArray(value.participants?.data)
+    ? value.participants.data.find(participant => PAGE_BY_ID.has(String(participant?.id ?? "")))
+    : null;
+  const configPage = PAGE_BY_ID.get(candidatePageId) ?? PAGE_BY_ID.get(String(participantPage?.id ?? ""));
   const pageId = configPage?.page_id ?? candidatePageId;
   const pageName = configPage?.page_name ?? context.pageName ?? value.page_name ?? value.pageName ?? null;
   const conversationId = String(context.conversationId ?? value.conversation_id ?? value.thread_id ?? value.id ?? "");
