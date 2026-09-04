@@ -56,17 +56,18 @@ for (const item of $input.all()) {
     for (const message of messages) {
       const messageId = String(message.id ?? "");
       const fromId = String(message.from?.id ?? "");
-      const fromEmail = String(message.from?.email ?? "");
       const occurredAt = message.created_time ?? conversation.updated_time ?? source.fetched_at ?? now;
       const text = cleanText(message.message ?? message.text ?? "");
       const attachments = attachmentsOf(message);
       const imageUrls = imageUrlsOf(attachments);
       const isEcho = message.is_echo === true;
-      // Some Meta exports mark page automation as is_echo=false and may also
-      // return a different room/page ID. The explicit page email marker and
-      // sender/page-name match are stronger evidence than the room ID alone.
-      const explicitPageSender = /@facebook\.com$/i.test(fromEmail)
-        || Boolean(conversationPageName && message.from?.name && message.from.name === conversationPageName);
+      // Do not use from.email: Meta can expose a customer profile as
+      // <id>@facebook.com too. Use explicit echo/ID signals and a normalized
+      // configured page-name match instead.
+      const normalizeName = (value) => String(value ?? "").replace(/[\u{1F000}-\u{1FAFF}\u{2000}-\u{206F}\s]/gu, "").toLowerCase();
+      const senderName = normalizeName(message.from?.name);
+      const configuredName = normalizeName(conversationPageName);
+      const explicitPageSender = Boolean(configuredName && senderName && (senderName === configuredName || senderName.includes(configuredName) || configuredName.includes(senderName)));
       const speakerHint = isEcho || (conversationPageId && fromId === conversationPageId) || explicitPageSender ? "page" : "customer";
       const dedupeKey = ["meta", conversationPageId, conversationId, messageId || occurredAt, text.slice(0, 100)].join(":");
 
@@ -92,19 +93,10 @@ for (const item of $input.all()) {
   }
 }
 
-// n8n stops a branch when a Code node returns zero items. Return a harmless
-// status item on an empty API window; downstream processors skip non-message
-// records, so this prevents a false workflow stop without inventing a chat.
+// Do not invent a status row in the raw message stream. The processors return
+// zero items for an empty window, so no HTTP Upsert can create a null-key row.
 if (!output.length) {
-  output.push({
-    json: {
-      record_type: "sync_status",
-      status: "empty",
-      message_count: 0,
-      fetched_at: now,
-      note: "Facebook API returned no conversations/messages in this window",
-    },
-  });
+  return [];
 }
 
 return output;

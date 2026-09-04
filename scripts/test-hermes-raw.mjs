@@ -16,7 +16,7 @@ const empty = await run([
     facebook_response: { data: [] },
   },
 ]);
-if (empty.length !== 1 || empty[0].json.record_type !== "sync_status" || empty[0].json.status !== "empty") {
+if (empty.length !== 0) {
   throw new Error(`Empty case failed: ${JSON.stringify(empty)}`);
 }
 

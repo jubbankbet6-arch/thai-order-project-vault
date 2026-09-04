@@ -20,7 +20,6 @@ for (const item of $input.all()) {
   const from = row.message_from ?? row.from ?? {};
   const fromId = String(row.message_from_id ?? row.sender_id ?? from.id ?? "");
   const fromName = String(row.message_from_name ?? row.sender_name ?? from.name ?? "");
-  const fromEmail = String(from.email ?? row.message_from_email ?? "");
   const pageName = String(row.page_name ?? row.pageName ?? "");
 
   // Prefer explicit classification from HERMES. Keep old fallbacks so this
@@ -30,8 +29,7 @@ for (const item of $input.all()) {
     || row.message_is_echo === true
     || row.is_echo === true
     || (fromId !== "" && pageId !== "" && fromId === pageId)
-    || /@facebook\.com$/i.test(fromEmail)
-    || (pageName !== "" && fromName !== "" && pageName === fromName);
+    || (pageName !== "" && fromName !== "" && (fromName === pageName || fromName.includes(pageName) || pageName.includes(fromName)));
   if (isPage) continue;
 
   const conversationKey = String(row.conversation_key ?? row.conversation_id ?? row.thread_id ?? row.threadId ?? "");
@@ -77,11 +75,6 @@ for (const item of $input.all()) {
   } });
 }
 
-// Return a status item instead of zero items so n8n does not stop when a
-// polling window contains only page messages.
-if (!output.length) {
-  return [{ json: { record_type: "sync_status", status: "no_customer_messages", message_count: 0, synced_at: new Date().toISOString() } }];
-}
 return output;
 
 // Supabase destination: chat_customer_messages; Upsert conflict: dedupe_key.
