@@ -100,6 +100,7 @@ export type ExternalChatMessage = {
   threadId: string;
   senderId: string;
   senderName: string | null;
+  customerName: string | null;
   senderType: "customer" | "page";
   side: "left" | "right";
   direction: "inbound" | "outbound";
@@ -342,12 +343,12 @@ export async function fetchExternalChatMessages(pageId?: string, threadId?: stri
   try {
     const [customers, pages] = await Promise.all([readTable("chat_customer_messages"), readTable("chat_page_messages")]);
     const rows: Array<Record<string, unknown> & { senderId: unknown; senderName: unknown; senderType: "customer" | "page"; side: "left" | "right"; direction: "inbound" | "outbound" }> = [
-      ...customers.map(row => ({ ...row, senderId: row.customer_id, senderName: row.customer_name, senderType: "customer" as const, side: "left" as const, direction: "inbound" as const })),
-      ...pages.map(row => ({ ...row, senderId: row.page_sender_id ?? row.page_id, senderName: row.page_sender_name, senderType: "page" as const, side: "right" as const, direction: "outbound" as const })),
+      ...customers.map(row => ({ ...row, senderId: row.customer_id, senderName: row.customer_name, customerName: row.customer_name, senderType: "customer" as const, side: "left" as const, direction: "inbound" as const })),
+      ...pages.map(row => ({ ...row, senderId: row.page_sender_id ?? row.page_id, senderName: row.page_sender_name, customerName: null, senderType: "page" as const, side: "right" as const, direction: "outbound" as const })),
     ];
     return rows.map((row, index) => ({
       id: Number(row.id ?? index + 1), providerMessageId: text(row.source_message_id), pageId: String(row.page_id ?? ""), pageName: text(row.page_name),
-      threadId: String(row.conversation_key ?? ""), senderId: String(row.senderId ?? ""), senderName: text(row.senderName), senderType: row.senderType, side: row.side, direction: row.direction,
+      threadId: String(row.conversation_key ?? ""), senderId: String(row.senderId ?? ""), senderName: text(row.senderName), customerName: text(row.customerName), senderType: row.senderType, side: row.side, direction: row.direction,
       text: text(row.message_text), attachmentsJson: jsonText(row.attachments_json), occurredAt: text(row.occurred_at), createdAt: text(row.synced_at),
     })).sort((a, b) => (Date.parse(String(b.occurredAt ?? "")) || 0) - (Date.parse(String(a.occurredAt ?? "")) || 0));
   } catch (error) {
@@ -372,52 +373,12 @@ export async function syncProductAliasToMaster(input: { alias: string; canonical
 }
 
 export async function fetchLiveThreads(search?: string) {
-  const orders = (await fetchLiveOrders(search)).filter(order => Boolean(order.page_id || order.page_name));
-  const [storedMessages, externalMessages] = await Promise.all([listStoredChatMessages(), fetchExternalChatMessages()]);
-  const allMessages = [
-    ...storedMessages.map(message => ({ pageId: message.pageId, pageName: message.pageName, threadId: message.threadId, occurredAt: message.occurredAt, direction: message.direction, text: message.text })),
-    ...externalMessages,
-  ];
+  const externalMessages = await fetchExternalChatMessages();
+  const allMessages = externalMessages;
   const groups = new Map<string, LiveThread>();
-  for (const order of orders) {
-    const key = `${order.page_id ?? order.page_name ?? "unknown"}::${order.thread_id ?? order.threadId ?? order.customer_name ?? order.order_number}`;
-    const existing = groups.get(key);
-    const itemPreview = order.items.map(item => item.label_display || item.telegram_final_mapped || item.display_for_packer || item.th_name || item.sku).filter(Boolean).join(", ");
-    const thread: LiveThread = existing ?? {
-      key,
-      pageName: order.page_name ?? order.page_id ?? "เพจไม่ทราบ",
-      pageId: order.page_id,
-      threadId: order.thread_id ?? order.threadId,
-      latestAt: order.updated_at ?? order.created_at ?? order.order_time,
-      latestOrderNumber: order.order_number,
-      customerName: order.customer_name,
-      chatTimeline: [],
-      preview: order.source_text ?? itemPreview ?? order.display_for_packer ?? "มีออเดอร์ใหม่",
-      orderCount: 0,
-      sentCount: 0,
-      messageCount: 0,
-      orders: [],
-    };
-    thread.orders.push(order);
-    for (const line of order.chat_timeline.length ? order.chat_timeline : timeline(order.raw_text_with_phone_timed)) {
-      if (!thread.chatTimeline.includes(line)) {
-        thread.chatTimeline.push(line);
-        thread.messageCount += 1;
-      }
-    }
-    thread.orderCount += 1;
-    if (String(order.telegram_status ?? "").toUpperCase() === "SENT") thread.sentCount += 1;
-    if ((Date.parse(String(order.updated_at ?? order.created_at ?? "")) || 0) > (Date.parse(String(thread.latestAt ?? "")) || 0)) {
-      thread.latestAt = order.updated_at ?? order.created_at ?? order.order_time;
-      thread.latestOrderNumber = order.order_number;
-      thread.customerName = order.customer_name;
-      thread.preview = order.source_text ?? itemPreview ?? order.display_for_packer ?? thread.preview;
-    }
-    groups.set(key, thread);
-  }
   for (const message of allMessages) {
     const key = `${message.pageId}::${message.threadId}`;
-    const messageAt = message.occurredAt instanceof Date ? message.occurredAt.toISOString() : String(message.occurredAt ?? "");
+    const messageAt = String(message.occurredAt ?? "");
     const existing = groups.get(key);
     const thread: LiveThread = existing ?? {
       key,
@@ -426,7 +387,7 @@ export async function fetchLiveThreads(search?: string) {
       threadId: message.threadId,
       latestAt: messageAt,
       latestOrderNumber: "",
-      customerName: null,
+      customerName: message.customerName ?? (message.senderType === "customer" ? message.senderName : null),
       chatTimeline: [],
       preview: message.text ?? "มีรูปภาพแนบ",
       orderCount: 0,
@@ -434,6 +395,7 @@ export async function fetchLiveThreads(search?: string) {
       messageCount: 0,
       orders: [],
     };
+    if (!thread.customerName && message.customerName) thread.customerName = message.customerName;
     if ((Date.parse(messageAt) || 0) > (Date.parse(String(thread.latestAt ?? "")) || 0)) {
       thread.latestAt = messageAt;
       thread.preview = message.text ?? "มีรูปภาพแนบ";
