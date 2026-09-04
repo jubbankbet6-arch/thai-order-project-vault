@@ -56,6 +56,10 @@ export type LiveOrder = {
   raw_text_with_phone_timed: string | null;
   full_chunk_text: string | null;
   chat_timeline: string[];
+  items_json?: unknown;
+  items_text?: string | null;
+  items_count?: number | null;
+  total_quantity?: number | null;
   items: LiveOrderItem[];
 };
 
@@ -128,17 +132,11 @@ const orderSelect = [
   "customer_name", "facebook_name", "phone", "full_address", "address_display_packer",
   "page_name", "page_id", "thread_id", "threadId", "cod_amount", "expected_cod", "sku", "th_name", "emoji", "display_label",
   "display_for_packer", "telegram_status", "order_status", "audit_status", "audit_flags",
-  "cod_check_status", "is_ready_to_pack", "telegram_message", "telegram_copy_text", "telegram_chat_id", "clean_text", "single_cleaned_block", "telegram_body",
+  "cod_check_status", "is_ready_to_pack", "telegram_message", "telegram_copy_text", "telegram_chat_id", "clean_text", "single_cleaned_block", "telegram_body", "items_json", "items_text", "items_count", "total_quantity", "packer_copy_text", "source_system",
 ].join(",");
 
-const itemSelect = [
-  "id", "upsert_key", "order_number", "order_date", "order_time", "created_at", "updated_at",
-  "customer_name", "facebook_name", "phone", "full_address", "address_display_packer", "addressclean",
-  "page_name", "page_id", "thread_id", "threadId", "sku", "th_name", "emoji", "label_display", "display_for_packer",
-  "telegram_final_mapped", "product_name", "quantity", "qty", "unit_price", "expected_cod", "cod_amount", "telegram_status",
-  "order_status", "audit_status", "audit_flags", "cod_check_status", "is_ready_to_pack", "telegram_message",
-  "telegram_chat_id", "telegram_message", "telegram_copy_text", "clean_text", "single_cleaned_block", "telegram_body",
-].join(",");
+/* legacy item select intentionally removed: bb_orders is canonical */
+const itemSelect = "";
 
 const recentOrderCache = new Map<string, { expiresAt: number; value: LiveOrder[] }>();
 const ORDER_CACHE_TTL_MS = 30_000;
@@ -216,6 +214,16 @@ function normalizeItem(row: Record<string, unknown>): LiveOrderItem {
   };
 }
 
+function itemLinesFromOrder(row: Record<string, unknown>): LiveOrderItem[] {
+  const raw = row.items_json;
+  let parsed: unknown[] = [];
+  if (Array.isArray(raw)) parsed = raw;
+  else if (typeof raw === "string") { try { const value = JSON.parse(raw); if (Array.isArray(value)) parsed = value; } catch { /* keep fallback */ } }
+  if (parsed.length) return parsed.filter(item => item && typeof item === "object").map(item => normalizeItem(item as Record<string, unknown>));
+  if (row.sku || row.th_name || row.display_label || row.display_for_packer) return [normalizeItem(row)];
+  return [];
+}
+
 function normalizeOrder(row: Record<string, unknown>, items: LiveOrderItem[]): LiveOrder {
   const orderNumber = text(row.order_number) ?? `#${text(row.id) ?? "unknown"}`;
   return {
@@ -256,6 +264,10 @@ function normalizeOrder(row: Record<string, unknown>, items: LiveOrderItem[]): L
     raw_text_with_phone_timed: text(row.raw_text_with_phone_timed ?? bodyField(row, "raw_text_with_phone_timed")),
     full_chunk_text: text(row.full_chunk_text ?? bodyField(row, "full_chunk_text")),
     chat_timeline: timeline(row.chat_timeline ?? bodyField(row, "chat_timeline") ?? row.raw_text_with_phone_timed ?? row.full_chunk_text ?? row.clean_text ?? row.telegram_copy_text ?? row.telegram_message),
+    items_json: row.items_json ?? null,
+    items_text: text(row.items_text ?? row.packer_copy_text),
+    items_count: number(row.items_count),
+    total_quantity: number(row.total_quantity),
     items,
   };
 }
@@ -276,46 +288,13 @@ async function getRowsWithFallback<T>(preferredTable: string, fallbackTable: str
 }
 
 export async function fetchLiveOrders(search?: string) {
-  const [rawOrders, rawItems] = await Promise.all([
-    getRowsWithFallback<Record<string, unknown>>("bb_orders", "bb_order", orderSelect, 1000),
-    getRows<Record<string, unknown>>("bb_order_items_fix", itemSelect, 3000),
-  ]);
-  const items = rawItems.map(normalizeItem);
-  const itemsByOrder = new Map<string, LiveOrderItem[]>();
-  for (const item of items) {
-    const keys = [item.order_number, item.upsert_key].filter(Boolean) as string[];
-    for (const key of keys) itemsByOrder.set(key, [...(itemsByOrder.get(key) ?? []), item]);
-  }
-
+  const rawOrders = await getRows<Record<string, unknown>>("bb_orders", orderSelect, 3000);
   const rawOrderByKey = new Map<string, Record<string, unknown>>();
   for (const row of rawOrders) {
     const key = text(row.order_number) ?? text(row.upsert_key) ?? `id:${text(row.id)}`;
     rawOrderByKey.set(key, row);
   }
-  const primaryOrderRows = new Map<string, Record<string, unknown>>();
-  for (const row of rawItems) {
-    const key = text(row.order_number) ?? text(row.upsert_key) ?? `id:${text(row.id)}`;
-    if (!primaryOrderRows.has(key)) primaryOrderRows.set(key, row);
-  }
-  // The detail table has the more complete customer payload. Keep unmatched
-  // bb_order rows as a fallback so no historical order silently disappears.
-  for (const row of rawOrders) {
-    const key = text(row.order_number) ?? text(row.upsert_key) ?? `id:${text(row.id)}`;
-    if (!primaryOrderRows.has(key)) primaryOrderRows.set(key, row);
-  }
-
-  const orders = Array.from(primaryOrderRows.entries()).map(([key, row]) => {
-    const supplement = rawOrderByKey.get(key);
-    const merged = { ...(supplement ?? {}), ...row };
-    for (const [field, value] of Object.entries(merged)) {
-      if ((value === null || value === undefined || value === "") && supplement?.[field] !== null && supplement?.[field] !== undefined && supplement?.[field] !== "") {
-        merged[field] = supplement[field];
-      }
-    }
-    const linkedItems = itemsByOrder.get(key) ?? [];
-    const uniqueItems = Array.from(new Map(linkedItems.map(item => [item.id ?? `${item.sku}-${item.quantity}`, item])).values());
-    return normalizeOrder(merged, uniqueItems);
-  }).sort(sortNewest);
+  const orders = rawOrders.map(row => normalizeOrder(row, itemLinesFromOrder(row))).sort(sortNewest);
 
   const query = search?.trim().toLowerCase();
   if (!query) return orders;
@@ -356,7 +335,7 @@ export async function fetchOrdersForThread(pageId: string, threadId: string): Pr
   });
   if (rpcResponse.ok) {
     const rows = await rpcResponse.json() as Array<Record<string, unknown>>;
-    const result = rows.map(row => normalizeOrder(row, [])).sort(sortNewest);
+    const result = rows.map(row => normalizeOrder(row, itemLinesFromOrder(row))).sort(sortNewest);
     recentOrderCache.set(cacheKey, { expiresAt: Date.now() + ORDER_CACHE_TTL_MS, value: result });
     return result;
   }
@@ -373,7 +352,7 @@ export async function fetchOrdersForThread(pageId: string, threadId: string): Pr
   if (!response.ok && /404|42P01|relation|does not exist/i.test(await response.text())) response = await request("bb_order");
   if (!response.ok) throw new Error(`Supabase order thread lookup returned HTTP ${response.status}`);
   const rows = await response.json() as Array<Record<string, unknown>>;
-  const result = rows.map(row => normalizeOrder(row, [])).sort(sortNewest);
+  const result = rows.map(row => normalizeOrder(row, itemLinesFromOrder(row))).sort(sortNewest);
   recentOrderCache.set(cacheKey, { expiresAt: Date.now() + ORDER_CACHE_TTL_MS, value: result });
   return result;
 }
@@ -383,25 +362,47 @@ export function clearRecentOrderCache() {
 }
 
 export async function fetchLiveProductMappings(): Promise<LiveProductMapping[]> {
-  const rows = await getRows<Record<string, unknown>>("product_master", "sku,label_display,display_for_packer,name_standard,unit_price,emoji,alias", 1000);
+  const [productResult, mapResult] = await Promise.allSettled([
+    getRows<Record<string, unknown>>("product_master", "sku,label_display,display_for_packer,name_standard,unit_price,emoji,alias", 1000),
+    getRows<Record<string, unknown>>("product_map_master", "sku,alias,alias_text", 5000),
+  ]);
+  if (productResult.status === "rejected") throw productResult.reason;
+  const rows = productResult.value;
+  const mappedAliases = new Map<string, string>();
+  if (mapResult.status === "fulfilled") for (const row of mapResult.value) {
+    const sku = String(row.sku ?? "").trim();
+    const alias = text(row.alias ?? row.alias_text);
+    if (sku && alias) mappedAliases.set(sku, alias);
+  }
   return rows.map(row => ({
     sku: String(row.sku ?? ""),
     label: String(row.label_display ?? row.display_for_packer ?? row.name_standard ?? row.sku ?? ""),
     price: number(row.unit_price),
     emoji: text(row.emoji),
-    aliases: text(row.alias),
+    aliases: mappedAliases.get(String(row.sku ?? "")) ?? text(row.alias),
   })).filter(item => item.sku && item.label).sort((a, b) => a.sku.localeCompare(b.sku));
 }
 
 export async function fetchStockProducts(): Promise<StockProduct[]> {
-  const rows = await getRows<Record<string, unknown>>("product_master", "id,sku,label_display,display_for_packer,name_standard,unit_price,emoji,alias,th_name,stock_qty,stock_status,status,updated_at", 2000);
+  const [productResult, mapResult] = await Promise.allSettled([
+    getRows<Record<string, unknown>>("product_master", "id,sku,label_display,display_for_packer,name_standard,unit_price,emoji,alias,th_name,stock_qty,stock_status,status,updated_at", 2000),
+    getRows<Record<string, unknown>>("product_map_master", "sku,alias,alias_text,alias_norm", 5000),
+  ]);
+  if (productResult.status === "rejected") throw productResult.reason;
+  const rows = productResult.value;
+  const mappedAliases = new Map<string, string>();
+  if (mapResult.status === "fulfilled") for (const row of mapResult.value) {
+    const sku = String(row.sku ?? "").trim();
+    const alias = text(row.alias ?? row.alias_text);
+    if (sku && alias) mappedAliases.set(sku, alias);
+  }
   return rows.map(row => ({
     id: number(row.id) ?? 0,
     sku: String(row.sku ?? ""),
     label: String(row.label_display ?? row.display_for_packer ?? row.name_standard ?? row.sku ?? ""),
     price: number(row.unit_price),
     emoji: text(row.emoji),
-    aliases: text(row.alias),
+    aliases: mappedAliases.get(String(row.sku ?? "")) ?? text(row.alias),
     thName: text(row.th_name),
     stockQty: number(row.stock_qty),
     stockStatus: text(row.stock_status),
@@ -425,8 +426,20 @@ export async function updateStockProduct(id: number, input: { stockQty?: number;
 export async function updateProductMapAlias(sku: string, alias: string) {
   const { baseUrl, key } = config();
   const cleanAlias = alias.trim();
-  const response = await fetch(`${baseUrl}/rest/v1/product_map_master?sku=eq.${encodeURIComponent(sku)}`, { method: "PATCH", headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify({ alias: cleanAlias || null, alias_text: cleanAlias || null, alias_norm: cleanAlias ? cleanAlias.toLowerCase() : null, updated_at: new Date().toISOString() }) });
+  const mappedBody = { alias: cleanAlias || null, alias_text: cleanAlias || null, alias_norm: cleanAlias ? cleanAlias.toLowerCase() : null, updated_at: new Date().toISOString() };
+  const response = await fetch(`${baseUrl}/rest/v1/product_map_master?sku=eq.${encodeURIComponent(sku)}`, { method: "PATCH", headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify(mappedBody) });
   if (!response.ok) throw new Error(`Supabase product_map_master alias update returned HTTP ${response.status}: ${(await response.text()).slice(0, 300)}`);
+  const master = await fetch(`${baseUrl}/rest/v1/product_master?select=id,alias&sku=eq.${encodeURIComponent(sku)}&limit=1`, { headers: { apikey: key, Authorization: `Bearer ${key}` } });
+  if (master.ok) {
+    const rows = await master.json() as Array<{ id: number; alias?: string | null }>;
+    const row = rows[0];
+    if (row) {
+      const aliases = String(row.alias ?? "").split(/[,\n|]+/).map(value => value.trim()).filter(Boolean).filter(value => value.toLowerCase() !== cleanAlias.toLowerCase());
+      if (cleanAlias) aliases.push(cleanAlias);
+      const sync = await fetch(`${baseUrl}/rest/v1/product_master?id=eq.${encodeURIComponent(String(row.id))}`, { method: "PATCH", headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json", Prefer: "return=minimal" }, body: JSON.stringify({ alias: aliases.join(", ") || null }) });
+      if (!sync.ok) throw new Error(`Supabase product_master alias sync returned HTTP ${sync.status}`);
+    }
+  }
   return { ok: true, sku, alias: cleanAlias };
 }
 

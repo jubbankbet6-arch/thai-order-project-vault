@@ -123,7 +123,7 @@ export const appRouter = router({
     }),
     live: protectedProcedure.input(z.object({ search: z.string().optional() }).optional()).query(async ({ input }) => {
       const orders = await fetchLiveOrders(input?.search);
-      return { orders, stats: getLiveOrderStats(orders), source: ["bb_order", "bb_order_items_fix"] as const, fetchedAt: new Date().toISOString() };
+      return { orders, stats: getLiveOrderStats(orders), source: ["bb_orders"] as const, fetchedAt: new Date().toISOString() };
     }),
     liveDetail: protectedProcedure.input(z.object({ orderNumber: z.string().trim().min(1) })).query(({ input }) => fetchLiveOrder(input.orderNumber)),
     forThread: protectedProcedure.input(z.object({ pageId: z.string().min(1), threadId: z.string().min(1) })).query(({ input }) => fetchOrdersForThread(input.pageId, input.threadId)),
