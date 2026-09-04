@@ -5,7 +5,7 @@
 
 const now = new Date();
 const since = new Date(now.getTime() - 5 * 60 * 60 * 1000);
-const fields = "id,updated_time,message_count,unread_count,participants,can_reply,messages.limit(30){id,message,created_time,from{id,name},is_echo,attachments{mime_type,name,file_url,url},shares{name,link},sticker}";
+const fields = "id,updated_time,message_count,unread_count,participants,can_reply,messages.limit(30){id,message,created_time,from{id,name},is_echo,attachments{mime_type,name,size,type,file_url,url,payload{url,sticker_id}},shares{name,link},sticker}";
 
 function errorText(error) {
   const value = error ?? {};

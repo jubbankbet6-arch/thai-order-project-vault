@@ -13,6 +13,22 @@ function attachmentsOf(message) {
   if (Array.isArray(message.attachments?.data)) return message.attachments.data;
   return Array.isArray(message.attachments) ? message.attachments : [];
 }
+function imageUrlsOf(attachments) {
+  const urls = [];
+  for (const attachment of attachments) {
+    const candidates = [
+      attachment.url,
+      attachment.file_url,
+      attachment.payload?.url,
+      attachment.image_data?.url,
+      attachment.target?.url,
+    ];
+    for (const url of candidates) {
+      if (typeof url === "string" && /^https?:\/\//i.test(url) && !urls.includes(url)) urls.push(url);
+    }
+  }
+  return urls;
+}
 
 for (const item of $input.all()) {
   const source = item.json ?? {};
@@ -43,6 +59,7 @@ for (const item of $input.all()) {
       const occurredAt = message.created_time ?? conversation.updated_time ?? source.fetched_at ?? now;
       const text = cleanText(message.message ?? message.text ?? "");
       const attachments = attachmentsOf(message);
+      const imageUrls = imageUrlsOf(attachments);
       const isEcho = message.is_echo === true;
       const speakerHint = isEcho || (conversationPageId && fromId === conversationPageId) ? "page" : "customer";
       const dedupeKey = ["meta", conversationPageId, conversationId, messageId || occurredAt, text.slice(0, 100)].join(":");
@@ -56,7 +73,8 @@ for (const item of $input.all()) {
         conversation_unread_count: conversation.unread_count ?? null,
         can_reply: conversation.can_reply ?? null, participants,
         message_id: messageId || null, source_message_id: messageId || null, dedupe_key: dedupeKey,
-        message_text: text, message_type: attachments.length ? "attachment" : "text", attachments,
+        message_text: text, message_type: imageUrls.length ? "image" : attachments.length ? "attachment" : "text", attachments,
+        attachment_count: attachments.length, has_image: imageUrls.length > 0, image_urls: imageUrls,
         shares: message.shares ?? null, sticker: message.sticker ?? null,
         message_from: message.from ?? null, message_from_id: fromId || null, message_from_name: message.from?.name ?? null,
         message_is_echo: isEcho, speaker_hint: speakerHint,

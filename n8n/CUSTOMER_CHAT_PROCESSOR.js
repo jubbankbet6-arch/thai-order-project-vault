@@ -22,7 +22,7 @@ for (const item of $input.all()) {
     customer_id: fromId || null, customer_name: row.message_from_name ?? null,
     speaker_type: "customer", side: "left",
     message_text: row.message_text ?? "", message_type: row.message_type ?? "text",
-    attachments_json: row.attachments ?? [], shares_json: row.shares ?? null, sticker_json: row.sticker ?? null,
+    attachments_json: row.attachments ?? [], image_urls: row.image_urls ?? [], has_image: row.has_image === true, attachment_count: row.attachment_count ?? 0, shares_json: row.shares ?? null, sticker_json: row.sticker ?? null,
     occurred_at: row.occurred_at ?? row.message_created_time ?? null,
     source_created_at: row.message_created_time ?? null, synced_at: row.fetched_at ?? new Date().toISOString(),
     raw_payload: { page_id: row.page_id, conversation_id: row.conversation_id, message_id: row.message_id, message: row.message_text, from: row.message_from, is_echo: row.message_is_echo, attachments: row.attachments, shares: row.shares, sticker: row.sticker },

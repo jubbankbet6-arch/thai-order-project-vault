@@ -36,7 +36,7 @@ const sample = await run([
         can_reply: true,
         participants: { data: [{ id: "1032290633303246", name: "ร้าน:เจ๊ B" }, { id: "customer-1", name: "สมบัติ" }] },
         messages: { data: [
-          { id: "customer-msg-1", message: "ขอรายละเอียดสินค้า", created_time: "2026-09-04T09:17:00+00:00", from: { id: "customer-1", name: "สมบัติ" }, is_echo: false },
+          { id: "customer-msg-1", message: "ขอรายละเอียดสินค้า", created_time: "2026-09-04T09:17:00+00:00", from: { id: "customer-1", name: "สมบัติ" }, is_echo: false, attachments: { data: [{ type: "image", payload: { url: "https://cdn.example.test/customer-photo.jpg" } }] } },
           { id: "page-msg-1", message: "มีบริการเก็บเงินปลายทาง", created_time: "2026-09-04T09:17:40+00:00", from: { id: "1032290633303246", name: "ร้าน:เจ๊ B" } },
         ] },
       }],
@@ -52,6 +52,7 @@ if (customer?.json.speaker_hint !== "customer") throw new Error("Customer classi
 if (page?.json.speaker_hint !== "page") throw new Error("Page classification failed");
 if (page?.json.message_created_time !== "2026-09-04T09:17:40+00:00") throw new Error("Page timestamp preservation failed");
 if (page?.json.page_id !== "1032290633303246") throw new Error("Page context preservation failed");
+if (customer?.json.has_image !== true || customer?.json.image_urls?.[0] !== "https://cdn.example.test/customer-photo.jpg") throw new Error("Image URL extraction failed");
 
 console.log(JSON.stringify({
   empty_case: empty,
