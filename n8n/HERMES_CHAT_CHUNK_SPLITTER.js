@@ -84,11 +84,14 @@ function findMessages(value, context = {}) {
       const messageId = String(message?.id ?? "");
       const from = message?.from ?? {};
       const fromId = String(from.id ?? "");
+      const senderPage = PAGE_BY_ID.get(fromId);
+      const resolvedPageId = senderPage?.page_id ?? pageId;
+      const resolvedPageName = senderPage?.page_name ?? pageName;
       const text = cleanText(message?.message ?? message?.text ?? "");
       const attachments = attachmentList(message);
       const urls = imageUrls(attachments);
       const isEcho = message?.is_echo === true;
-      const isPage = isEcho || Boolean(pageId && fromId && pageId === fromId);
+      const isPage = isEcho || Boolean(senderPage) || Boolean(resolvedPageId && fromId && resolvedPageId === fromId);
       const occurredAt = message?.created_time ?? value.updated_time ?? context.fetchedAt ?? now;
       const dedupeKey = messageId ? `meta:${messageId}` : `meta:${pageId}:${conversationId}:${occurredAt}:${text}`;
       if (seen.has(dedupeKey)) continue;
@@ -96,8 +99,8 @@ function findMessages(value, context = {}) {
 
       output.push({ json: {
         record_type: "message",
-        page_id: pageId || null,
-        page_name: pageName ?? pageParticipant?.name ?? null,
+        page_id: resolvedPageId || null,
+        page_name: resolvedPageName ?? pageParticipant?.name ?? null,
         conversation_id: conversationId || null,
         conversation_key: conversationId || null,
         thread_id: conversationId || null,
