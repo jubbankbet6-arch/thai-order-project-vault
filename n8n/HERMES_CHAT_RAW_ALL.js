@@ -56,12 +56,18 @@ for (const item of $input.all()) {
     for (const message of messages) {
       const messageId = String(message.id ?? "");
       const fromId = String(message.from?.id ?? "");
+      const fromEmail = String(message.from?.email ?? "");
       const occurredAt = message.created_time ?? conversation.updated_time ?? source.fetched_at ?? now;
       const text = cleanText(message.message ?? message.text ?? "");
       const attachments = attachmentsOf(message);
       const imageUrls = imageUrlsOf(attachments);
       const isEcho = message.is_echo === true;
-      const speakerHint = isEcho || (conversationPageId && fromId === conversationPageId) ? "page" : "customer";
+      // Some Meta exports mark page automation as is_echo=false and may also
+      // return a different room/page ID. The explicit page email marker and
+      // sender/page-name match are stronger evidence than the room ID alone.
+      const explicitPageSender = /@facebook\.com$/i.test(fromEmail)
+        || Boolean(conversationPageName && message.from?.name && message.from.name === conversationPageName);
+      const speakerHint = isEcho || (conversationPageId && fromId === conversationPageId) || explicitPageSender ? "page" : "customer";
       const dedupeKey = ["meta", conversationPageId, conversationId, messageId || occurredAt, text.slice(0, 100)].join(":");
 
       output.push({ json: {
@@ -77,7 +83,7 @@ for (const item of $input.all()) {
         attachment_count: attachments.length, has_image: imageUrls.length > 0, image_urls: imageUrls,
         shares: message.shares ?? null, sticker: message.sticker ?? null,
         message_from: message.from ?? null, message_from_id: fromId || null, message_from_name: message.from?.name ?? null,
-        message_is_echo: isEcho, speaker_hint: speakerHint,
+        message_from_is_page: explicitPageSender, message_is_echo: isEcho, speaker_hint: speakerHint,
         message_created_time: message.created_time ?? null, occurred_at: occurredAt,
         fetched_at: source.fetched_at ?? now, fetch_status: source.fetch_status ?? "success",
         raw_conversation: conversation, raw_message: message,

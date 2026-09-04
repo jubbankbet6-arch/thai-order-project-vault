@@ -9,7 +9,7 @@ for (const item of $input.all()) {
   if (row.record_type !== "message") continue;
   const pageId = String(row.page_id ?? "");
   const fromId = String(row.message_from_id ?? "");
-  const isPage = row.message_is_echo === true || fromId === pageId;
+  const isPage = row.speaker_hint === "page" || row.message_from_is_page === true || row.message_is_echo === true || fromId === pageId;
   if (isPage) continue;
   const dedupeKey = String(row.dedupe_key ?? `meta:${pageId}:${row.conversation_key}:${row.source_message_id ?? ""}`);
   if (seen.has(dedupeKey)) continue;
