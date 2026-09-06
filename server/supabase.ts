@@ -526,11 +526,19 @@ export async function fetchDailyChatOrderSummary(date: string) {
   const thaiDate = (value: string | null) => value ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value)) : "";
   const selected = messages.filter(message => thaiDate(message.occurredAt) === date);
   const groups = new Map<string, { pageId: string; pageName: string; threadId: string; customerName: string; customerId: string; customerMessages: number; pageMessages: number; orderSignals: number; latestAt: string | null; snippets: string[] }>();
-  const orderSignal = /(สั่ง|เอา|รับ|คอต|สินค้า|ปลายทาง|ชื่อ|ที่อยู่|เบอร์|โทร|จัดส่ง|โอน|ยอด|จำนวน|สนใจ)/i;
+  const codSignal = /(\bcod\b|ซีโอดี|เก็บเงินปลายทาง|ปลายทาง|ยอด\s*[0-9,]+\s*(บาท|฿)?|[0-9,]+\s*บาท)/i;
+  const intentSignal = /(สั่ง|เอาเลย|เอา\s*ค่ะ?|รับ\s*ค่ะ?|ขอ\s*รับ|จอง|สนใจ|ตกลง|ยืนยัน|คอนเฟิร์ม|โอน|เก็บปลายทาง)/i;
+  const productOrQuantitySignal = /(คอต|ชิ้น|กระปุก|ขวด|กล่อง|แพ็ค|แพค|สินค้า|รุ่น|สี|ตัว|\d+\s*(คอต|ชิ้น|ขวด|กล่อง|แพ็ค|แพค)?)/i;
+  const deliverySignal = /(0\d{8,9}|เบอร์|โทร|ที่อยู่|บ้านเลขที่|หมู่|ต\.|อ\.|จ\.|รหัสไปรษณีย์|ปลายทาง|จัดส่ง)/i;
+  const isOrderSignal = (value: string) => {
+    const normalized = value.replace(/[\u200b\s]+/g, " ").trim();
+    if (codSignal.test(normalized)) return true;
+    return (intentSignal.test(normalized) && (productOrQuantitySignal.test(normalized) || deliverySignal.test(normalized))) || (productOrQuantitySignal.test(normalized) && deliverySignal.test(normalized));
+  };
   for (const message of selected) {
     const key = `${message.pageId}::${message.threadId}`;
     const group = groups.get(key) ?? { pageId: message.pageId, pageName: message.pageName ?? message.pageId, threadId: message.threadId, customerName: message.customerName ?? message.senderName ?? "ไม่ระบุลูกค้า", customerId: message.senderType === "customer" ? message.senderId : "", customerMessages: 0, pageMessages: 0, orderSignals: 0, latestAt: message.occurredAt, snippets: [] };
-    if (message.senderType === "customer") { group.customerMessages += 1; if (message.text && orderSignal.test(message.text)) { group.orderSignals += 1; if (group.snippets.length < 3) group.snippets.push(message.text.slice(0, 180)); } }
+    if (message.senderType === "customer") { group.customerMessages += 1; if (message.text && isOrderSignal(message.text)) { group.orderSignals += 1; if (group.snippets.length < 3) group.snippets.push(message.text.slice(0, 180)); } }
     else group.pageMessages += 1;
     if ((Date.parse(message.occurredAt ?? "") || 0) > (Date.parse(group.latestAt ?? "") || 0)) group.latestAt = message.occurredAt;
     if (!group.customerName || group.customerName === "ไม่ระบุลูกค้า") group.customerName = message.customerName ?? message.senderName ?? group.customerName;
