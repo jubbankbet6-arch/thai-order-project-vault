@@ -32,10 +32,17 @@ function normalizeItems(r) {
 for (const item of $input.all()) {
   const r = item.json ?? {};
   const items_json = normalizeItems(r);
+  const pageId = first(r.page_id, r.Page_ID, r.pageId) ?? null;
+  const threadId = first(r.thread_id, r.threadId, r.conversation_key, r.conversation_id) ?? null;
+  const sourceMessageId = first(r.source_message_id, r.message_id) ?? null;
+  const upsertKey = first(r.upsert_key, r.order_number, sourceMessageId ? `meta:${pageId ?? ""}:${threadId ?? ""}:${sourceMessageId}` : null) ?? null;
   const items_text = items_json.map(x => `${x.label_display ?? x.display_for_packer ?? x.th_name ?? x.sku ?? "สินค้า"} ${x.quantity} ชิ้น`).join("\n");
   const total_quantity = items_json.reduce((sum, x) => sum + asNumber(x.quantity, 1), 0);
   out.push({ json: {
     ...r,
+    upsert_key: upsertKey,
+    page_id: pageId,
+    thread_id: threadId,
     items_json,
     items_text,
     items_count: items_json.length,
