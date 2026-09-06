@@ -13,13 +13,25 @@ function arrayValue(value) {
   return [];
 }
 
+function nonEmpty(...values) {
+  for (const value of values) {
+    if (value === null || value === undefined) continue;
+    const clean = String(value).trim();
+    if (clean && clean !== "null" && clean !== "undefined") return clean;
+  }
+  return "";
+}
+
 for (const item of $input.all()) {
   const r = item.json ?? {};
-  const pageId = String(r.page_id ?? r.Page_ID ?? r.pageId ?? "").trim();
-  const conversationKey = String(r.conversation_key ?? r.conversation_id ?? r.thread_id ?? r.threadId ?? "").trim();
+  const raw = r.raw_payload && typeof r.raw_payload === "object" ? r.raw_payload : {};
+  const rawConversation = raw.conversation && typeof raw.conversation === "object" ? raw.conversation : {};
+  const rawMessage = raw.message && typeof raw.message === "object" ? raw.message : {};
+  const pageId = nonEmpty(r.page_id, r.Page_ID, r.pageId, raw.page_id, raw.Page_ID, raw.pageId, rawConversation.page_id, rawConversation.Page_ID, rawMessage.page_id, rawMessage.Page_ID, r.page?.id, raw.page?.id);
+  const conversationKey = nonEmpty(r.conversation_key, r.conversation_id, r.thread_id, r.threadId, raw.conversation_key, raw.conversation_id, raw.thread_id, raw.threadId, rawConversation.id, rawConversation.conversation_id);
   const from = r.message_from ?? r.from ?? {};
-  const senderId = String(r.message_from_id ?? r.sender_id ?? from.id ?? r.customer_id ?? "").trim();
-  const sourceMessageId = String(r.source_message_id ?? r.message_id ?? r.id ?? "").trim();
+  const senderId = nonEmpty(r.message_from_id, r.sender_id, from.id, r.customer_id, raw.message_from_id, raw.sender_id, rawMessage.from?.id);
+  const sourceMessageId = nonEmpty(r.source_message_id, r.message_id, r.id, raw.source_message_id, raw.message_id, rawMessage.id);
   const text = String(r.message_text ?? r.message ?? r.text ?? "");
   const occurredAt = r.occurred_at ?? r.message_created_time ?? r.created_time ?? r.time ?? null;
   const attachments = arrayValue(r.attachments_json ?? r.attachments);
