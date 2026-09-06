@@ -13,6 +13,7 @@ import OrderPerformance from "@/pages/OrderPerformance";
 import StockRoom from "@/pages/StockRoom";
 import MappingDashboard from "@/pages/MappingDashboard";
 import OrderBuckets from "@/pages/OrderBuckets";
+import DailyChatSummary from "@/pages/DailyChatSummary";
 
 function Router() {
   return (
@@ -37,6 +38,9 @@ function Router() {
       </Route>
       <Route path="/order-buckets">
         <DashboardLayout><OrderBuckets /></DashboardLayout>
+      </Route>
+      <Route path="/daily-chat-summary">
+        <DashboardLayout><DailyChatSummary /></DashboardLayout>
       </Route>
       <Route path="/">
         <DashboardLayout><Home /></DashboardLayout>

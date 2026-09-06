@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/sidebar";
 import { startLogin } from "@/const";
 import { useIsMobile } from "@/hooks/useMobile";
-import { Activity, Bell, Boxes, Database, LayoutDashboard, LogOut, MessageCircle, PanelLeft, Tags } from "lucide-react";
+import { Activity, Bell, Boxes, CalendarDays, Database, LayoutDashboard, LogOut, MessageCircle, PanelLeft, Tags } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -32,6 +32,7 @@ const menuItems = [
   { icon: LayoutDashboard, label: "Order Control", path: "/orders" },
   { icon: Boxes, label: "แยก 1/2/3 คอต", path: "/order-buckets" },
   { icon: MessageCircle, label: "รวมแชทเพจ", path: "/chats" },
+  { icon: CalendarDays, label: "สรุปออเดอร์รายวัน", path: "/daily-chat-summary" },
   { icon: Activity, label: "ประสิทธิภาพดูดออเดอร์", path: "/order-performance" },
   { icon: Boxes, label: "เช็กสต๊อก / เติมสต๊อก", path: "/stock-room" },
   { icon: Tags, label: "Dashboard Mapping", path: "/mapping-dashboard" },

@@ -521,6 +521,25 @@ export async function fetchExternalChatMessages(pageId?: string, threadId?: stri
   }
 }
 
+export async function fetchDailyChatOrderSummary(date: string) {
+  const messages = await fetchExternalChatMessages(undefined, undefined, 10000);
+  const thaiDate = (value: string | null) => value ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value)) : "";
+  const selected = messages.filter(message => thaiDate(message.occurredAt) === date);
+  const groups = new Map<string, { pageId: string; pageName: string; threadId: string; customerName: string; customerId: string; customerMessages: number; pageMessages: number; orderSignals: number; latestAt: string | null; snippets: string[] }>();
+  const orderSignal = /(สั่ง|เอา|รับ|คอต|สินค้า|ปลายทาง|ชื่อ|ที่อยู่|เบอร์|โทร|จัดส่ง|โอน|ยอด|จำนวน|สนใจ)/i;
+  for (const message of selected) {
+    const key = `${message.pageId}::${message.threadId}`;
+    const group = groups.get(key) ?? { pageId: message.pageId, pageName: message.pageName ?? message.pageId, threadId: message.threadId, customerName: message.customerName ?? message.senderName ?? "ไม่ระบุลูกค้า", customerId: message.senderType === "customer" ? message.senderId : "", customerMessages: 0, pageMessages: 0, orderSignals: 0, latestAt: message.occurredAt, snippets: [] };
+    if (message.senderType === "customer") { group.customerMessages += 1; if (message.text && orderSignal.test(message.text)) { group.orderSignals += 1; if (group.snippets.length < 3) group.snippets.push(message.text.slice(0, 180)); } }
+    else group.pageMessages += 1;
+    if ((Date.parse(message.occurredAt ?? "") || 0) > (Date.parse(group.latestAt ?? "") || 0)) group.latestAt = message.occurredAt;
+    if (!group.customerName || group.customerName === "ไม่ระบุลูกค้า") group.customerName = message.customerName ?? message.senderName ?? group.customerName;
+    groups.set(key, group);
+  }
+  const threads = Array.from(groups.values()).sort((a, b) => (b.orderSignals - a.orderSignals) || ((Date.parse(b.latestAt ?? "") || 0) - (Date.parse(a.latestAt ?? "") || 0)));
+  return { date, totalMessages: selected.length, customerMessages: selected.filter(message => message.senderType === "customer").length, pageMessages: selected.filter(message => message.senderType === "page").length, threadCount: threads.length, orderSignalThreads: threads.filter(thread => thread.orderSignals > 0).length, threads, generatedAt: new Date().toISOString() };
+}
+
 export async function fetchCustomerChatEvidence(pageId: string, threadId: string, limit = 500) {
   const { baseUrl, key } = config();
   const params = new URLSearchParams({
