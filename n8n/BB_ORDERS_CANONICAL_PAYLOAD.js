@@ -12,6 +12,14 @@ function asNumber(value, fallback = 1) {
 function first(...values) {
   return values.find(value => value !== undefined && value !== null && String(value).trim() !== "");
 }
+function stableHash(value) {
+  let hash = 2166136261;
+  for (const char of String(value)) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
 function normalizeItems(r) {
   const source = r.items_json ?? r.items ?? r.products ?? r.product_lines ?? [];
   const list = Array.isArray(source) ? source : [];
@@ -34,8 +42,21 @@ for (const item of $input.all()) {
   const items_json = normalizeItems(r);
   const pageId = first(r.page_id, r.Page_ID, r.pageId) ?? null;
   const threadId = first(r.thread_id, r.threadId, r.conversation_key, r.conversation_id) ?? null;
-  const sourceMessageId = first(r.source_message_id, r.message_id) ?? null;
-  const upsertKey = first(r.upsert_key, r.order_number, sourceMessageId ? `meta:${pageId ?? ""}:${threadId ?? ""}:${sourceMessageId}` : null) ?? null;
+  const sourceMessageId = first(r.source_message_id, r.message_id, r.page_summary_message_id) ?? null;
+  const explicitOrderId = first(r.order_number, r.source_order_id, r.order_id);
+  const orderFingerprint = [
+    pageId ?? "",
+    threadId ?? "",
+    first(r.order_time, r.order_date, r.timestamp, r.created_at) ?? "",
+    first(r.phone, r.extracted_phone, r.customer_id) ?? "",
+    first(r.single_cleaned_block, r.final_display_for_packer, r.items_text) ?? "",
+  ].join("|");
+  const upsertKey = first(
+    r.upsert_key,
+    explicitOrderId ? `order:${explicitOrderId}` : null,
+    sourceMessageId ? `meta:${pageId ?? ""}:${threadId ?? ""}:${sourceMessageId}` : null,
+    orderFingerprint.replace(/\|/g, "") ? `order-fp:${stableHash(orderFingerprint)}` : null,
+  ) ?? null;
   const items_text = items_json.map(x => `${x.label_display ?? x.display_for_packer ?? x.th_name ?? x.sku ?? "สินค้า"} ${x.quantity} ชิ้น`).join("\n");
   const total_quantity = items_json.reduce((sum, x) => sum + asNumber(x.quantity, 1), 0);
   out.push({ json: {
