@@ -27,6 +27,7 @@ import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 import { Button } from "./ui/button";
+import { PRESENTATION_MODE } from "@shared/presentation";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Order Control", path: "/orders" },
@@ -55,8 +56,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     localStorage.setItem(SIDEBAR_WIDTH_KEY, sidebarWidth.toString());
   }, [sidebarWidth]);
 
-  if (loading) return <DashboardLayoutSkeleton />;
-  if (!user) {
+  if (loading && !PRESENTATION_MODE) return <DashboardLayoutSkeleton />;
+  if (!user && !PRESENTATION_MODE) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#f6f8fb]">
         <div className="flex w-full max-w-md flex-col items-center gap-8 rounded-3xl bg-white p-8 text-center shadow-xl shadow-slate-200/60">

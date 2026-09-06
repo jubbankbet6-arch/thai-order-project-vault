@@ -1,6 +1,7 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import type { User } from "../../drizzle/schema";
 import { sdk } from "./sdk";
+import { PRESENTATION_MODE, PRESENTATION_USER } from "@shared/presentation";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
@@ -23,6 +24,6 @@ export async function createContext(
   return {
     req: opts.req,
     res: opts.res,
-    user,
+    user: user ?? (PRESENTATION_MODE ? (PRESENTATION_USER as User) : null),
   };
 }
