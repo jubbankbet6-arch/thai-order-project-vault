@@ -105,6 +105,17 @@ export default function ChatHub() {
   const confirmSelectedOrder = () => { if (!selectedPageId || !selectedThreadId || selectedConfirmed) return; confirmOrder.mutate({ pageId: selectedPageId, threadId: selectedThreadId, customerName: selected?.customerName ?? undefined, customerId: selectedCustomerId || undefined, evidenceText: selected?.preview ?? undefined }); };
 
   useEffect(() => { if (!selectedKey && filteredThreads[0]) setSelectedKey(filteredThreads[0].key); }, [filteredThreads, selectedKey]);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const pageId = params.get("page_id");
+    const threadId = params.get("thread_id");
+    if (!pageId || !threadId) return;
+    const target = threads.find(thread => thread.pageId === pageId && thread.threadId === threadId);
+    if (target) {
+      setSelectedKey(target.key);
+      if (isMobile) setMobileOpen(true);
+    }
+  }, [threads, isMobile]);
   useEffect(() => { if (selectedKey && !filteredThreads.some(thread => thread.key === selectedKey)) setSelectedKey(filteredThreads[0]?.key ?? null); }, [filteredThreads, selectedKey]);
   useEffect(() => {
     const element = chatTimelineRef.current;

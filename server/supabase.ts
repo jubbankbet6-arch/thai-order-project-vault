@@ -138,10 +138,10 @@ const orderSelect = [
   "id", "upsert_key", "order_number", "order_date", "order_time", "created_at", "updated_at",
   "customer_name", "facebook_name", "phone", "full_address", "address_display_packer",
   "page_name", "page_id", "thread_id", "threadId", "cod_amount", "expected_cod", "sku", "th_name", "emoji", "display_label",
-  "display_for_packer", "final_display_for_packer", "raw_text", "raw_text_with_phone", "raw_text_with_phone_timed", "full_chunk_text", "chat_timeline", "addressclean", "short_address", "extracted_phone", "has_phone", "has_cod", "telegram_status", "order_status", "audit_status", "audit_flags",
+  "display_for_packer", "final_display_for_packer", "raw_text", "raw_text_with_phone", "raw_text_with_phone_timed", "full_chunk_text", "chat_timeline", "addressclean", "short_address", "single_cleaned_block", "bubble_window", "qty", "telegram_sent", "extracted_phone", "has_phone", "has_cod", "telegram_status", "order_status", "audit_status", "audit_flags",
   "cod_check_status", "is_ready_to_pack", "telegram_message", "telegram_copy_text", "telegram_chat_id", "clean_text", "single_cleaned_block", "telegram_body", "items_json", "items_text", "items_count", "total_quantity", "packer_copy_text", "source_system",
 ].join(",");
-const legacyOrderSelect = orderSelect.split(",").filter(field => !["items_json", "items_text", "items_count", "total_quantity", "packer_copy_text", "source_system", "final_display_for_packer", "raw_text", "raw_text_with_phone", "raw_text_with_phone_timed", "full_chunk_text", "chat_timeline", "addressclean", "short_address", "extracted_phone", "has_phone", "has_cod"].includes(field)).join(",");
+const legacyOrderSelect = orderSelect.split(",").filter(field => !["items_json", "items_text", "items_count", "total_quantity", "packer_copy_text", "source_system", "final_display_for_packer", "raw_text", "raw_text_with_phone", "raw_text_with_phone_timed", "full_chunk_text", "chat_timeline", "addressclean", "short_address", "single_cleaned_block", "bubble_window", "qty", "telegram_sent", "extracted_phone", "has_phone", "has_cod"].includes(field)).join(",");
 
 /* legacy item select intentionally removed: bb_orders is canonical */
 const itemSelect = "";
@@ -558,6 +558,24 @@ export async function fetchDailyChatOrderSummary(date: string) {
   }
   const threads = Array.from(groups.values()).sort((a, b) => (b.orderSignals - a.orderSignals) || ((Date.parse(b.latestAt ?? "") || 0) - (Date.parse(a.latestAt ?? "") || 0)));
   return { date, totalMessages: selected.length, customerMessages: selected.filter(message => message.senderType === "customer").length, pageMessages: selected.filter(message => message.senderType === "page").length, threadCount: threads.length, orderSignalThreads: threads.filter(thread => thread.orderSignals > 0).length, threads, generatedAt: new Date().toISOString() };
+}
+
+function bangkokDateKey(value: string | null) {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).format(parsed);
+  const match = value.match(/(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})/);
+  if (!match) return "";
+  let year = Number(match[3]);
+  if (year < 100) year += 2000;
+  if (year > 2400) year -= 543;
+  return `${year.toString().padStart(4, "0")}-${match[2].padStart(2, "0")}-${match[1].padStart(2, "0")}`;
+}
+
+export async function fetchDailyOrderHistory(date: string, search?: string) {
+  const orders = await fetchLiveOrders(search);
+  const filtered = orders.filter(order => [order.order_date, order.order_time, order.created_at].some(value => bangkokDateKey(value) === date));
+  return { date, total: filtered.length, orders: filtered, source: "bb_orders" as const, generatedAt: new Date().toISOString() };
 }
 
 export async function fetchCustomerChatEvidence(pageId: string, threadId: string, limit = 500) {

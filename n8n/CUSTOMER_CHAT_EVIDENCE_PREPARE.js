@@ -75,7 +75,17 @@ for (const item of $input.all()) {
   } });
 }
 
-return output;
+// Keep n8n alive on polling windows with no eligible customer evidence.
+// Route this status through an IF node (write_evidence = true) before the
+// Supabase HTTP Upsert node; never send the status item to Supabase.
+if (!output.length) return [{ json: {
+  record_type: "sync_status",
+  status: "no_customer_evidence",
+  write_evidence: false,
+  message_count: 0,
+  synced_at: new Date().toISOString(),
+} }];
+return output.map(item => ({ json: { ...item.json, record_type: "customer_evidence", write_evidence: true } }));
 
 // HTTP Request JSON body should pass the complete $json object.
 // URL: /rest/v1/chat_customer_evidence?on_conflict=dedupe_key
