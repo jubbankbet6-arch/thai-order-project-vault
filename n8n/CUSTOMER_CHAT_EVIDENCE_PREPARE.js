@@ -22,6 +22,27 @@ function nonEmpty(...values) {
   return "";
 }
 
+// Supabase timestamptz must not receive Thai display strings such as
+// 26/08/26 11:18:54. Treat slash-formatted values as Asia/Bangkok, convert
+// Buddhist years, and return an unambiguous UTC ISO string.
+function normalizeTimestamp(value) {
+  if (value === null || value === undefined || String(value).trim() === "") return null;
+  const input = String(value).trim();
+  const slash = input.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?)?$/);
+  if (slash) {
+    let year = Number(slash[3]);
+    if (year > 2400) year -= 543;
+    else if (year < 100) year += 2000;
+    const local = `${year.toString().padStart(4, "0")}-${slash[2].padStart(2, "0")}-${slash[1].padStart(2, "0")}T${(slash[4] ?? "00").padStart(2, "0")}:${slash[5] ?? "00"}:${slash[6] ?? "00"}.${(slash[7] ?? "0").padEnd(3, "0")}+07:00`;
+    const date = new Date(local);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+  }
+  const withColonOffset = input.replace(/([+-]\d{2})(\d{2})$/, "$1:$2");
+  const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(withColonOffset);
+  const date = new Date(hasTimezone ? withColonOffset : `${withColonOffset.replace(" ", "T")}+07:00`);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 for (const item of $input.all()) {
   const r = item.json ?? {};
   const raw = r.raw_payload && typeof r.raw_payload === "object" ? r.raw_payload : {};
@@ -33,7 +54,7 @@ for (const item of $input.all()) {
   const senderId = nonEmpty(r.message_from_id, r.sender_id, from.id, r.customer_id, raw.message_from_id, raw.sender_id, rawMessage.from?.id);
   const sourceMessageId = nonEmpty(r.source_message_id, r.message_id, r.id, raw.source_message_id, raw.message_id, rawMessage.id);
   const text = String(r.message_text ?? r.message ?? r.text ?? "");
-  const occurredAt = r.occurred_at ?? r.message_created_time ?? r.created_time ?? r.time ?? null;
+  const occurredAt = normalizeTimestamp(r.occurred_at ?? r.message_created_time ?? r.created_time ?? r.time ?? null);
   const attachments = arrayValue(r.attachments_json ?? r.attachments);
   const imageUrls = arrayValue(r.image_urls).map(String).filter(url => /^https?:\/\//i.test(url));
 
@@ -68,7 +89,7 @@ for (const item of $input.all()) {
     shares_json: r.shares_json ?? r.shares ?? null,
     sticker_json: r.sticker_json ?? r.sticker ?? null,
     occurred_at: occurredAt,
-    source_created_at: r.source_created_at ?? r.message_created_time ?? r.created_time ?? null,
+    source_created_at: normalizeTimestamp(r.source_created_at ?? r.message_created_time ?? r.created_time ?? null),
     last_seen_at: new Date().toISOString(),
     raw_payload: r.raw_payload ?? r,
     ingestion_source: "meta_n8n_polling"
