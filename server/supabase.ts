@@ -577,6 +577,33 @@ export async function fetchCustomerChatEvidence(pageId: string, threadId: string
   return response.json() as Promise<Array<Record<string, unknown>>>;
 }
 
+/**
+ * Conversation evidence for the order dialog. This intentionally reads both
+ * chat projections so the page's final order-summary message is not lost.
+ * The immutable customer-only ledger remains separate for audit purposes.
+ */
+export async function fetchConversationEvidence(pageId: string, threadId: string, limit = 500) {
+  const messages = await fetchExternalChatMessages(pageId, threadId, limit);
+  return messages
+    .sort((a, b) => (Date.parse(String(a.occurredAt ?? "")) || 0) - (Date.parse(String(b.occurredAt ?? "")) || 0))
+    .map((message, index) => ({
+      id: `${message.senderType}-${message.providerMessageId || index}`,
+      source_message_id: message.providerMessageId,
+      dedupe_key: message.providerMessageId ? `meta:${message.providerMessageId}` : null,
+      page_id: message.pageId,
+      page_name: message.pageName,
+      conversation_key: message.threadId,
+      customer_name: message.customerName,
+      sender_name: message.senderName,
+      speaker_type: message.senderType,
+      side: message.side,
+      message_text: message.text,
+      attachments_json: message.attachmentsJson,
+      occurred_at: message.occurredAt,
+      source_created_at: message.occurredAt,
+    }));
+}
+
 export async function syncProductAliasToMaster(input: { alias: string; canonicalSku: string }) {
   const { baseUrl, key } = config();
   const filter = encodeURIComponent(input.canonicalSku);
