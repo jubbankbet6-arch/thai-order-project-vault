@@ -138,10 +138,10 @@ const orderSelect = [
   "id", "upsert_key", "order_number", "order_date", "order_time", "created_at", "updated_at",
   "customer_name", "facebook_name", "phone", "full_address", "address_display_packer",
   "page_name", "page_id", "thread_id", "threadId", "cod_amount", "expected_cod", "sku", "th_name", "emoji", "display_label",
-  "display_for_packer", "telegram_status", "order_status", "audit_status", "audit_flags",
+  "display_for_packer", "final_display_for_packer", "raw_text", "raw_text_with_phone", "raw_text_with_phone_timed", "full_chunk_text", "chat_timeline", "addressclean", "short_address", "extracted_phone", "has_phone", "has_cod", "telegram_status", "order_status", "audit_status", "audit_flags",
   "cod_check_status", "is_ready_to_pack", "telegram_message", "telegram_copy_text", "telegram_chat_id", "clean_text", "single_cleaned_block", "telegram_body", "items_json", "items_text", "items_count", "total_quantity", "packer_copy_text", "source_system",
 ].join(",");
-const legacyOrderSelect = orderSelect.split(",").filter(field => !["items_json", "items_text", "items_count", "total_quantity", "packer_copy_text", "source_system"].includes(field)).join(",");
+const legacyOrderSelect = orderSelect.split(",").filter(field => !["items_json", "items_text", "items_count", "total_quantity", "packer_copy_text", "source_system", "final_display_for_packer", "raw_text", "raw_text_with_phone", "raw_text_with_phone_timed", "full_chunk_text", "chat_timeline", "addressclean", "short_address", "extracted_phone", "has_phone", "has_cod"].includes(field)).join(",");
 
 /* legacy item select intentionally removed: bb_orders is canonical */
 const itemSelect = "";
@@ -196,6 +196,18 @@ function bodyField(row: Record<string, unknown>, field: string) {
   return body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>)[field] : undefined;
 }
 
+function firstText(row: Record<string, unknown>, ...fields: string[]) {
+  for (const field of fields) { const value = text(row[field]); if (value?.trim()) return value; }
+  return null;
+}
+
+function customerNameFromRow(row: Record<string, unknown>) {
+  const candidate = firstText(row, "customer_name", "facebook_name");
+  const facebook = firstText(row, "facebook_name");
+  if (facebook && candidate && (/^\d{1,2}$/.test(candidate.trim()) || /^\d{1,2}[/-]\d{1,2}/.test(candidate.trim()))) return facebook;
+  return candidate;
+}
+
 function sortNewest(a: { created_at?: string | null; order_time?: string | null }, b: { created_at?: string | null; order_time?: string | null }) {
   const aTime = Date.parse(String(a.created_at ?? a.order_time ?? "")) || 0;
   const bTime = Date.parse(String(b.created_at ?? b.order_time ?? "")) || 0;
@@ -242,21 +254,21 @@ function normalizeOrder(row: Record<string, unknown>, items: LiveOrderItem[]): L
     order_time: text(row.order_time),
     created_at: text(row.created_at),
     updated_at: text(row.updated_at),
-    customer_name: text(row.customer_name) ?? text(row.facebook_name),
+    customer_name: customerNameFromRow(row),
     facebook_name: text(row.facebook_name),
-    phone: text(row.phone) ?? text(row.extracted_phone),
-    full_address: text(row.full_address) ?? text(row.address_display_packer),
+    phone: firstText(row, "phone", "extracted_phone"),
+    full_address: firstText(row, "full_address", "address_display_packer", "addressclean", "short_address", "parsedLocationOnly"),
     address_display_packer: text(row.address_display_packer),
     page_name: text(row.page_name),
     page_id: text(row.page_id),
     thread_id: text(row.thread_id),
     threadId: text(row.threadId),
-    cod_amount: number(row.cod_amount),
-    expected_cod: number(row.expected_cod),
+    cod_amount: number(row.cod_amount) ?? number(row.expected_cod) ?? number(bodyField(row, "cod_amount")) ?? number(bodyField(row, "total_cod")),
+    expected_cod: number(row.expected_cod) ?? number(row.cod_amount),
     sku: text(row.sku),
     th_name: text(row.th_name),
     emoji: text(row.emoji),
-    display_for_packer: text(row.display_for_packer) ?? text(row.final_display_for_packer),
+    display_for_packer: firstText(row, "display_for_packer", "final_display_for_packer"),
     label_display: text(row.label_display) ?? text(row.display_label),
     telegram_status: text(row.telegram_status),
     order_status: text(row.order_status),
@@ -267,7 +279,7 @@ function normalizeOrder(row: Record<string, unknown>, items: LiveOrderItem[]): L
     telegram_message: text(row.telegram_message),
     telegram_copy_text: text(row.telegram_copy_text),
     telegram_chat_id: text(row.telegram_chat_id),
-    source_text: text(row.clean_text) ?? text(row.single_cleaned_block),
+    source_text: firstText(row, "raw_text", "clean_text", "single_cleaned_block", "full_chunk_text"),
     raw_text_with_phone: text(row.raw_text_with_phone ?? bodyField(row, "raw_text_with_phone")),
     raw_text_with_phone_timed: text(row.raw_text_with_phone_timed ?? bodyField(row, "raw_text_with_phone_timed")),
     full_chunk_text: text(row.full_chunk_text ?? bodyField(row, "full_chunk_text")),
