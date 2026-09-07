@@ -19,14 +19,14 @@ export const appRouter = router({
     chatEvidence: publicProcedure.input(threadInput).query(async ({ input }) => {
       const page = encodeURIComponent(input.pageId);
       const thread = encodeURIComponent(input.threadId);
-      return supabaseGet<unknown[]>(`chat_customer_evidence?page_id=eq.${page}&conversation_key=eq.${thread}&select=*&order=occurred_at.asc`);
+      return supabaseGet<unknown[]>(`vw_chat_customer_evidence_history?page_id=eq.${page}&conversation_key=eq.${thread}&select=*&order=occurred_at.asc`);
     }),
     searchEvidence: publicProcedure.input(z.object({ q: z.string().optional(), pageId: z.string().optional(), conversationKey: z.string().optional(), limit: z.number().int().min(1).max(200).default(50) })).query(async ({ input }) => {
       const filters = ["select=*", `limit=${input.limit}`, "order=occurred_at.desc"];
       if (input.q?.trim()) filters.push(`search_text=ilike.*${encodeURIComponent(input.q.trim())}*`);
       if (input.pageId?.trim()) filters.push(`page_id=eq.${encodeURIComponent(input.pageId.trim())}`);
       if (input.conversationKey?.trim()) filters.push(`conversation_key=eq.${encodeURIComponent(input.conversationKey.trim())}`);
-      return supabaseGet<unknown[]>(`chat_customer_evidence_v2?${filters.join("&")}`);
+      return supabaseGet<unknown[]>(`vw_chat_customer_evidence_history?${filters.join("&")}`);
     }),
     generateSummary: publicProcedure.input(threadInput).mutation(async ({ input }) => ({
       orderNumber: "",
